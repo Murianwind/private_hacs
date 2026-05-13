@@ -241,6 +241,19 @@ class GitHubClient:
             shutil.rmtree(target_dir)
             _LOGGER.info("Uninstalled %s", component_id)
 
+    async def get_contents(self, repo: str, path: str) -> list[dict] | None:
+        """Return contents of a path in the repository."""
+        url = f"{GITHUB_API_BASE}/repos/{repo}/contents/{path}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                headers=self._headers(),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                if resp.status == 200:
+                    return await resp.json()
+                return None
+
     # ------------------------------------------------------------------
     # Token validation
     # ------------------------------------------------------------------
