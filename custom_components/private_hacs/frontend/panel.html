@@ -108,6 +108,13 @@
   .confirm-box p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; white-space: pre-line; }
   .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+  /* 저장소 추가 모달 - GitHub API 로딩 */
+  .repo-preview { display: none; background: var(--surface3); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; font-size: 12px; }
+  .repo-preview.visible { display: block; }
+  .repo-preview-name { font-weight: 600; margin-bottom: 4px; }
+  .repo-preview-desc { color: var(--text-secondary); }
+  .repo-preview-component { color: var(--primary); font-family: monospace; margin-top: 6px; }
+
   @media (max-width: 600px) {
     .repo-card { flex-direction: column; align-items: flex-start; }
     .repo-actions { width: 100%; }
@@ -157,23 +164,20 @@
       <label>GitHub 저장소 *</label>
       <input id="addRepo" placeholder="owner/repo-name" autocomplete="off">
       <div class="hint">예: your-org/your-private-integration</div>
+      <!-- GitHub API로 저장소 정보 조회 후 미리보기 -->
+      <div class="repo-preview" id="repoPreview">
+        <div class="repo-preview-name" id="previewName"></div>
+        <div class="repo-preview-desc" id="previewDesc"></div>
+        <div class="repo-preview-component" id="previewComponent"></div>
+      </div>
     </div>
     <div class="modal-field">
-      <label>표시 이름 *</label>
-      <input id="addName" placeholder="My Integration" autocomplete="off">
-    </div>
-    <div class="modal-field">
-      <label>컴포넌트 ID *</label>
-      <input id="addComponentId" placeholder="my_integration" autocomplete="off">
-      <div class="hint">custom_components/ 하위 폴더명 (snake_case)</div>
-    </div>
-    <div class="modal-field">
-      <label>기본 브랜치</label>
+      <label>기본 브랜치 <span style="color:var(--text-secondary)">(선택, 기본값: main)</span></label>
       <input id="addBranch" placeholder="main" value="main" autocomplete="off">
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeAddModal()">취소</button>
-      <button class="btn btn-primary" onclick="submitAddRepo()" id="addSubmitBtn">추가</button>
+      <button class="btn btn-primary" onclick="submitAddRepo()" id="addSubmitBtn" disabled>추가</button>
     </div>
   </div>
 </div>
@@ -197,16 +201,13 @@
 let repos = [];
 let activeTab = 'all';
 let busyComponents = new Set();
+let _pendingRepoInfo = null; // 저장소 추가 모달에서 조회한 정보
 
-// shadow DOM의 부모 Web Component가 제공하는 토큰 getter 사용
 async function getToken() {
-  // panel.js가 shadowRoot._getToken을 주입함
-  const root = document.getRootNode();
-  if (root && typeof root._getToken === 'function') {
-    return root._getToken();
+  if (typeof window.__privateHacsGetToken === 'function') {
+    return window.__privateHacsGetToken();
   }
-  // fallback: 직접 실행 환경 (개발용)
-  return Promise.reject(new Error('패널 컨텍스트에서 실행되지 않았습니다.'));
+  return Promise.reject(new Error('패널이 올바르게 로드되지 않았습니다. 페이지를 새로고침 해보세요.'));
 }
 
 // ── WebSocket ──────────────────────────────────────────────────────────────
@@ -234,6 +235,18 @@ async function connectWS() {
     };
     ws.onerror = () => reject(new Error('WebSocket 연결 오류'));
   });
+}
+
+function wsSend(msg) {
+  return new Promise((resolve) => {
+    const id = msgId++;
+    pending[id] = resolve;
+    ws.send(JSON.stringify({ ...msg, id }));
+  });
+}
+
+async function callService(domain, service, data) {
+  return wsSend({ type: 'call_service', domain, service, service_data: data });
 }
 
 // ── Data ───────────────────────────────────────────────────────────────────
@@ -283,7 +296,6 @@ async function loadData() {
       `<div class="empty"><div class="empty-icon">⚠️</div><p>데이터를 불러오지 못했습니다.<br>${err.message}</p></div>`;
     return;
   }
-
   document.getElementById('stats').style.display = 'grid';
   document.getElementById('filterBar').style.display = 'flex';
   renderAll();
@@ -447,61 +459,125 @@ async function refreshAll() {
 }
 
 // ── Add repo modal ─────────────────────────────────────────────────────────
+// GitHub API로 저장소 조회 — custom_components 하위 폴더명 자동 감지
+let _repoLookupTimer = null;
+
 function openAddModal() {
+  _pendingRepoInfo = null;
   document.getElementById('addRepo').value = '';
-  document.getElementById('addName').value = '';
-  document.getElementById('addComponentId').value = '';
-  document.getElementById('addComponentId').dataset.userEdited = '';
-  document.getElementById('addName').dataset.userEdited = '';
   document.getElementById('addBranch').value = 'main';
+  document.getElementById('repoPreview').classList.remove('visible');
+  document.getElementById('addSubmitBtn').disabled = true;
   document.getElementById('addModal').classList.add('open');
   setTimeout(() => document.getElementById('addRepo').focus(), 50);
 }
 
 function closeAddModal() {
   document.getElementById('addModal').classList.remove('open');
+  _pendingRepoInfo = null;
 }
 
 document.getElementById('addRepo').addEventListener('input', (e) => {
-  const parts = e.target.value.split('/');
-  if (parts.length >= 2 && parts[1]) {
-    const repoName = parts[1];
-    if (!document.getElementById('addComponentId').dataset.userEdited)
-      document.getElementById('addComponentId').value = repoName.replace(/-/g, '_').toLowerCase();
-    if (!document.getElementById('addName').dataset.userEdited)
-      document.getElementById('addName').value = repoName;
-  }
+  const val = e.target.value.trim();
+  document.getElementById('repoPreview').classList.remove('visible');
+  document.getElementById('addSubmitBtn').disabled = true;
+  _pendingRepoInfo = null;
+
+  clearTimeout(_repoLookupTimer);
+  if (!/^[a-zA-Z0-9_\-]+\/[a-zA-Z0-9_\-\.]+$/.test(val)) return;
+
+  // 입력 멈춘 후 800ms 뒤 GitHub API 조회
+  _repoLookupTimer = setTimeout(() => lookupRepo(val), 800);
 });
-document.getElementById('addComponentId').addEventListener('input', (e) => { e.target.dataset.userEdited = '1'; });
-document.getElementById('addName').addEventListener('input', (e) => { e.target.dataset.userEdited = '1'; });
+
+async function lookupRepo(repo) {
+  const preview = document.getElementById('repoPreview');
+  preview.classList.add('visible');
+  document.getElementById('previewName').textContent = '조회 중...';
+  document.getElementById('previewDesc').textContent = '';
+  document.getElementById('previewComponent').textContent = '';
+
+  try {
+    // GitHub API로 저장소 기본 정보 + custom_components 폴더 목록 조회
+    const [repoRes, contentsRes] = await Promise.all([
+      fetch(`https://api.github.com/repos/${repo}`).then(r => r.json()),
+      fetch(`https://api.github.com/repos/${repo}/contents/custom_components`).then(r => r.ok ? r.json() : []),
+    ]);
+
+    if (repoRes.message === 'Not Found') {
+      document.getElementById('previewName').textContent = '저장소를 찾을 수 없습니다.';
+      document.getElementById('previewDesc').textContent = 'Private 저장소는 토큰 없이 조회할 수 없습니다.';
+      // Private 저장소는 조회 불가지만 주소 형식이 맞으면 수동으로 허용
+      _pendingRepoInfo = {
+        repo,
+        name: repo.split('/')[1],
+        component_id: repo.split('/')[1].replace(/-/g, '_').toLowerCase(),
+        branch: repoRes.default_branch || 'main',
+      };
+      document.getElementById('previewComponent').textContent =
+        `component_id: ${_pendingRepoInfo.component_id} (추정)`;
+      document.getElementById('addSubmitBtn').disabled = false;
+      return;
+    }
+
+    // custom_components 하위 폴더 목록에서 component_id 결정
+    const folders = Array.isArray(contentsRes)
+      ? contentsRes.filter(f => f.type === 'dir').map(f => f.name)
+      : [];
+
+    const componentId = folders.length === 1
+      ? folders[0]
+      : folders.length > 1
+        ? folders[0]  // 여러 개면 첫 번째 선택
+        : repo.split('/')[1].replace(/-/g, '_').toLowerCase();  // 폴더 없으면 추정
+
+    _pendingRepoInfo = {
+      repo,
+      name: repoRes.name || repo.split('/')[1],
+      component_id: componentId,
+      branch: repoRes.default_branch || 'main',
+    };
+
+    document.getElementById('previewName').textContent = repoRes.full_name;
+    document.getElementById('previewDesc').textContent = repoRes.description || '';
+    document.getElementById('previewComponent').textContent =
+      `component_id: ${componentId}${folders.length > 1 ? ` (${folders.join(', ')} 중 첫 번째)` : ''}`;
+    document.getElementById('addSubmitBtn').disabled = false;
+
+  } catch (err) {
+    document.getElementById('previewName').textContent = '조회 실패';
+    document.getElementById('previewDesc').textContent = err.message;
+    // 조회 실패해도 입력값으로 추가 허용
+    _pendingRepoInfo = {
+      repo,
+      name: repo.split('/')[1],
+      component_id: repo.split('/')[1].replace(/-/g, '_').toLowerCase(),
+      branch: 'main',
+    };
+    document.getElementById('addSubmitBtn').disabled = false;
+  }
+}
 
 async function submitAddRepo() {
-  const repo = document.getElementById('addRepo').value.trim();
-  const name = document.getElementById('addName').value.trim();
-  const componentId = document.getElementById('addComponentId').value.trim();
-  const branch = document.getElementById('addBranch').value.trim() || 'main';
+  if (!_pendingRepoInfo) {
+    toast('저장소 주소를 입력하고 잠시 기다려주세요.', 'warning'); return;
+  }
 
-  if (!repo || !name || !componentId) {
-    toast('저장소, 표시 이름, 컴포넌트 ID는 필수입니다.', 'warning'); return;
-  }
-  if (!/^[a-zA-Z0-9_\-]+\/[a-zA-Z0-9_\-\.]+$/.test(repo)) {
-    toast('저장소 형식이 올바르지 않습니다. (예: owner/repo-name)', 'warning'); return;
-  }
-  if (!/^[a-z0-9_]+$/.test(componentId)) {
-    toast('컴포넌트 ID는 소문자, 숫자, 밑줄(_)만 사용 가능합니다.', 'warning'); return;
-  }
+  const branch = document.getElementById('addBranch').value.trim() || _pendingRepoInfo.branch;
+  const { repo, name, component_id } = _pendingRepoInfo;
 
   const btn = document.getElementById('addSubmitBtn');
   btn.disabled = true; btn.textContent = '추가 중...';
   try {
-    await callService('private_hacs', 'add_repo', { repo, name, component_id: componentId, branch });
+    await callService('private_hacs', 'add_repo', {
+      repo, name, component_id, branch,
+    });
     closeAddModal();
     toast(`${name} 저장소가 추가됐습니다. 버전 정보를 가져오는 중...`, 'success', 5000);
     await new Promise(r => setTimeout(r, 3000));
     repos = await fetchRepos(); renderAll();
   } catch (err) {
     toast(`저장소 추가 실패: ${err.message}`, 'error', 6000);
-  } finally {
     btn.disabled = false; btn.textContent = '추가';
   }
 }
