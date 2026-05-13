@@ -14,6 +14,34 @@ _LOGGER = logging.getLogger(__name__)
 
 _REGISTERED_HASS_IDS: set[int] = set()
 
+_PANEL_JS = """customElements.define('private-hacs-panel', class extends HTMLElement {
+  connectedCallback() {
+    if (this.shadowRoot) return;
+    const shadow = this.attachShadow({ mode: 'open' });
+    const iframe = document.createElement('iframe');
+    iframe.src = '/private_hacs_panel/panel.html';
+    iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
+    shadow.appendChild(iframe);
+
+    iframe.addEventListener('load', () => {
+      try {
+        const token =
+          window.hassConnection?.auth?.data?.access_token ||
+          document.cookie.match(/ingress_token=([^;]+)/)?.[1] || '';
+        iframe.contentWindow.postMessage({ type: 'ha_token', token }, '*');
+      } catch(_) {}
+    });
+  }
+
+  set hass(_) {}
+});"""
+
+
+def _write_panel_js_sync(path: str) -> None:
+    """Blocking write — must be called via executor."""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(_PANEL_JS)
+
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
     """Register the sidebar panel (idempotent per hass instance)."""
@@ -30,7 +58,11 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
 
     js_dir = os.path.join(panel_dir, "js")
     os.makedirs(js_dir, exist_ok=True)
-    _write_panel_js(os.path.join(js_dir, "panel.js"))
+
+    # open()은 blocking이므로 executor에서 실행
+    await hass.async_add_executor_job(
+        _write_panel_js_sync, os.path.join(js_dir, "panel.js")
+    )
 
     await hass.http.async_register_static_paths(
         [
@@ -59,33 +91,6 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
 
     _REGISTERED_HASS_IDS.add(hass_id)
     _LOGGER.info("Private HACS panel registered at /%s", PANEL_URL)
-
-
-def _write_panel_js(path: str) -> None:
-    """Write the Web Component JS that wraps panel.html in an iframe."""
-    js = """customElements.define('private-hacs-panel', class extends HTMLElement {
-  connectedCallback() {
-    if (this.shadowRoot) return;
-    const shadow = this.attachShadow({ mode: 'open' });
-    const iframe = document.createElement('iframe');
-    iframe.src = '/private_hacs_panel/panel.html';
-    iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
-    shadow.appendChild(iframe);
-
-    iframe.addEventListener('load', () => {
-      try {
-        const token =
-          window.hassConnection?.auth?.data?.access_token ||
-          document.cookie.match(/ingress_token=([^;]+)/)?.[1] || '';
-        iframe.contentWindow.postMessage({ type: 'ha_token', token }, '*');
-      } catch(_) {}
-    });
-  }
-
-  set hass(_) {}
-});"""
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(js)
 
 
 async def async_remove_panel(hass: HomeAssistant) -> None:
