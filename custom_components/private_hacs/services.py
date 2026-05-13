@@ -5,136 +5,213 @@ import logging
 
 import voluptuous as vol
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
-from .const import DOMAIN
+from .const import CONF_GITHUB_TOKEN, CONF_REPOS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_INSTALL = "install"
 SERVICE_UNINSTALL = "uninstall"
 SERVICE_REFRESH = "refresh"
+SERVICE_ADD_REPO = "add_repo"
+SERVICE_REMOVE_REPO = "remove_repo"
 
 SCHEMA_COMPONENT = vol.Schema({vol.Required("component_id"): cv.string})
 SCHEMA_EMPTY = vol.Schema({})
+SCHEMA_ADD_REPO = vol.Schema(
+    {
+        vol.Required("repo"): cv.string,
+        vol.Required("name"): cv.string,
+        vol.Required("component_id"): cv.string,
+        vol.Optional("branch", default="main"): cv.string,
+    }
+)
+SCHEMA_REMOVE_REPO = vol.Schema({vol.Required("component_id"): cv.string})
 
 
 def async_register_services(hass: HomeAssistant) -> None:
     """Register all Private HACS services (idempotent)."""
 
     async def handle_install(call: ServiceCall) -> None:
-        component_id: str = call.data["component_id"]
-        await _do_install(hass, component_id)
+        await _do_install(hass, call.data["component_id"])
 
     async def handle_uninstall(call: ServiceCall) -> None:
-        component_id: str = call.data["component_id"]
-        await _do_uninstall(hass, component_id)
+        await _do_uninstall(hass, call.data["component_id"])
 
     async def handle_refresh(call: ServiceCall) -> None:
         await _do_refresh(hass)
 
-    if not hass.services.has_service(DOMAIN, SERVICE_INSTALL):
-        hass.services.async_register(
-            DOMAIN, SERVICE_INSTALL, handle_install, schema=SCHEMA_COMPONENT
+    async def handle_add_repo(call: ServiceCall) -> None:
+        await _do_add_repo(
+            hass,
+            repo=call.data["repo"],
+            name=call.data["name"],
+            component_id=call.data["component_id"],
+            branch=call.data.get("branch", "main"),
         )
-    if not hass.services.has_service(DOMAIN, SERVICE_UNINSTALL):
-        hass.services.async_register(
-            DOMAIN, SERVICE_UNINSTALL, handle_uninstall, schema=SCHEMA_COMPONENT
-        )
-    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
-        hass.services.async_register(
-            DOMAIN, SERVICE_REFRESH, handle_refresh, schema=SCHEMA_EMPTY
-        )
+
+    async def handle_remove_repo(call: ServiceCall) -> None:
+        await _do_remove_repo(hass, call.data["component_id"])
+
+    _register_once(hass, SERVICE_INSTALL, handle_install, SCHEMA_COMPONENT)
+    _register_once(hass, SERVICE_UNINSTALL, handle_uninstall, SCHEMA_COMPONENT)
+    _register_once(hass, SERVICE_REFRESH, handle_refresh, SCHEMA_EMPTY)
+    _register_once(hass, SERVICE_ADD_REPO, handle_add_repo, SCHEMA_ADD_REPO)
+    _register_once(hass, SERVICE_REMOVE_REPO, handle_remove_repo, SCHEMA_REMOVE_REPO)
+
+
+def _register_once(hass, service, handler, schema) -> None:
+    if not hass.services.has_service(DOMAIN, service):
+        hass.services.async_register(DOMAIN, service, handler, schema=schema)
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:
-    hass.services.async_remove(DOMAIN, SERVICE_INSTALL)
-    hass.services.async_remove(DOMAIN, SERVICE_UNINSTALL)
-    hass.services.async_remove(DOMAIN, SERVICE_REFRESH)
+    for svc in (
+        SERVICE_INSTALL,
+        SERVICE_UNINSTALL,
+        SERVICE_REFRESH,
+        SERVICE_ADD_REPO,
+        SERVICE_REMOVE_REPO,
+    ):
+        if hass.services.has_service(DOMAIN, svc):
+            hass.services.async_remove(DOMAIN, svc)
 
 
-# ---------------------------------------------------------------------------
-# Actual logic
-# ---------------------------------------------------------------------------
+def _get_entry(hass: HomeAssistant) -> ConfigEntry | None:
+    entries = hass.config_entries.async_entries(DOMAIN)
+    return entries[0] if entries else None
+
+
+def _get_entry_data(hass: HomeAssistant) -> dict | None:
+    domain_data = hass.data.get(DOMAIN, {})
+    for entry_data in domain_data.values():
+        return entry_data
+    return None
+
 
 async def _do_install(hass: HomeAssistant, component_id: str) -> None:
-    domain_data = hass.data.get(DOMAIN, {})
-    # Find the entry that has this component
-    for entry_id, entry_data in domain_data.items():
-        coordinator = entry_data.get("coordinator")
-        github = entry_data.get("github")
-        store = entry_data.get("store")
+    ed = _get_entry_data(hass)
+    if ed is None:
+        raise HomeAssistantError("Private HACS가 로드되지 않았습니다.")
 
-        if coordinator is None or coordinator.data is None:
-            continue
+    coordinator = ed["coordinator"]
+    github = ed["github"]
+    store = ed["store"]
 
-        repo_data = coordinator.data.get(component_id)
-        if repo_data is None:
-            continue
-
-        latest = repo_data.get("latest")
-        if latest is None:
-            raise HomeAssistantError(
-                f"No version info available for {component_id}. Try refreshing."
-            )
-
-        repo: str = repo_data["repo"]
-        ref: str = latest["download_ref"]
-
-        _LOGGER.info("Installing %s (%s @ %s)", component_id, repo, ref)
-
-        try:
-            await github.download_and_install(hass, repo, component_id, ref)
-        except Exception as exc:
-            raise HomeAssistantError(f"Install failed: {exc}") from exc
-
-        await store.async_set(
-            component_id,
-            {"installed_version": latest["version"]},
+    if coordinator.data is None or component_id not in coordinator.data:
+        raise HomeAssistantError(
+            f"'{component_id}'를 찾을 수 없습니다. 먼저 저장소를 등록하세요."
         )
 
-        # Refresh coordinator so update entity state updates immediately
-        await coordinator.async_request_refresh()
-        return
+    repo_data = coordinator.data[component_id]
+    latest = repo_data.get("latest")
+    if latest is None:
+        raise HomeAssistantError(
+            f"'{component_id}' 버전 정보가 없습니다. 새로고침 후 다시 시도하세요."
+        )
 
-    raise HomeAssistantError(
-        f"Component '{component_id}' not found in Private HACS configuration."
-    )
+    repo: str = repo_data["repo"]
+    ref: str = latest["download_ref"]
+    _LOGGER.info("Installing %s (%s @ %s)", component_id, repo, ref)
+
+    try:
+        await github.download_and_install(hass, repo, component_id, ref)
+    except Exception as exc:
+        raise HomeAssistantError(f"설치 실패: {exc}") from exc
+
+    await store.async_set(component_id, {"installed_version": latest["version"]})
+    await coordinator.async_request_refresh()
 
 
 async def _do_uninstall(hass: HomeAssistant, component_id: str) -> None:
-    domain_data = hass.data.get(DOMAIN, {})
+    ed = _get_entry_data(hass)
+    if ed is None:
+        raise HomeAssistantError("Private HACS가 로드되지 않았습니다.")
 
-    for entry_id, entry_data in domain_data.items():
-        coordinator = entry_data.get("coordinator")
-        github = entry_data.get("github")
-        store = entry_data.get("store")
+    coordinator = ed["coordinator"]
+    github = ed["github"]
+    store = ed["store"]
 
-        if coordinator is None or coordinator.data is None:
-            continue
+    if coordinator.data is None or component_id not in coordinator.data:
+        raise HomeAssistantError(f"'{component_id}'를 찾을 수 없습니다.")
 
-        if component_id not in coordinator.data:
-            continue
+    try:
+        await github.uninstall(hass, component_id)
+    except Exception as exc:
+        raise HomeAssistantError(f"삭제 실패: {exc}") from exc
 
-        try:
-            await github.uninstall(hass, component_id)
-        except Exception as exc:
-            raise HomeAssistantError(f"Uninstall failed: {exc}") from exc
-
-        await store.async_remove(component_id)
-        await coordinator.async_request_refresh()
-        return
-
-    raise HomeAssistantError(
-        f"Component '{component_id}' not found in Private HACS configuration."
-    )
+    await store.async_remove(component_id)
+    await coordinator.async_request_refresh()
 
 
 async def _do_refresh(hass: HomeAssistant) -> None:
-    domain_data = hass.data.get(DOMAIN, {})
-    for entry_data in domain_data.values():
-        coordinator = entry_data.get("coordinator")
-        if coordinator:
-            await coordinator.async_request_refresh()
+    ed = _get_entry_data(hass)
+    if ed and ed.get("coordinator"):
+        await ed["coordinator"].async_request_refresh()
+
+
+async def _do_add_repo(
+    hass: HomeAssistant,
+    repo: str,
+    name: str,
+    component_id: str,
+    branch: str,
+) -> None:
+    entry = _get_entry(hass)
+    if entry is None:
+        raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
+
+    current_repos: list[dict] = list(entry.data.get(CONF_REPOS, []))
+
+    if any(r["component_id"] == component_id for r in current_repos):
+        raise HomeAssistantError(f"'{component_id}'는 이미 등록된 저장소입니다.")
+
+    current_repos.append({
+        "repo": repo,
+        "name": name,
+        "component_id": component_id,
+        "branch": branch,
+    })
+
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_REPOS: current_repos},
+    )
+
+    ed = _get_entry_data(hass)
+    if ed:
+        ed["coordinator"].repos = current_repos
+        await ed["coordinator"].async_request_refresh()
+
+    _LOGGER.info("Repo added: %s (%s)", name, repo)
+
+
+async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
+    entry = _get_entry(hass)
+    if entry is None:
+        raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
+
+    current_repos: list[dict] = list(entry.data.get(CONF_REPOS, []))
+    new_repos = [r for r in current_repos if r["component_id"] != component_id]
+
+    if len(new_repos) == len(current_repos):
+        raise HomeAssistantError(f"'{component_id}'는 등록된 저장소가 아닙니다.")
+
+    hass.config_entries.async_update_entry(
+        entry,
+        data={**entry.data, CONF_REPOS: new_repos},
+    )
+
+    ed = _get_entry_data(hass)
+    if ed:
+        coordinator = ed["coordinator"]
+        coordinator.repos = new_repos
+        if coordinator.data and component_id in coordinator.data:
+            del coordinator.data[component_id]
+        coordinator.async_update_listeners()
+
+    _LOGGER.info("Repo removed: %s", component_id)
