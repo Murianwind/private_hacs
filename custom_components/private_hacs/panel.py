@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _REGISTERED_HASS_IDS: set[int] = set()
 
-_PANEL_JS = """\
+_PANEL_JS = r"""\
 customElements.define('private-hacs-panel', class extends HTMLElement {
   connectedCallback() {
     if (this._initialized) return;
