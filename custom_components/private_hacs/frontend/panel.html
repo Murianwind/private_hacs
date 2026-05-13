@@ -193,32 +193,53 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
+// ── State ──────────────────────────────────────────────────────────────────
 let repos = [];
 let activeTab = 'all';
 let busyComponents = new Set();
 let _haToken = '';
 
+// 토큰을 Promise로 관리 — 받을 때까지 연결 대기
+let _tokenResolve = null;
+const _tokenPromise = new Promise((resolve) => { _tokenResolve = resolve; });
+
 window.addEventListener('message', (e) => {
-  if (e.data?.type === 'ha_token' && e.data.token) _haToken = e.data.token;
+  if (e.data?.type === 'ha_token' && e.data.token) {
+    _haToken = e.data.token;
+    _tokenResolve(e.data.token);
+  }
 });
 
 function _cookieToken() {
   return document.cookie.match(/ingress_token=([^;]+)/)?.[1] || '';
 }
 
+async function getToken() {
+  const cookie = _cookieToken();
+  if (cookie) return cookie;
+  // postMessage 토큰을 최대 3초 대기
+  return Promise.race([
+    _tokenPromise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('토큰 수신 시간 초과. 페이지를 새로고침 해보세요.')), 3000)
+    ),
+  ]);
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
 let ws = null;
 let msgId = 1;
 const pending = {};
 
 async function connectWS() {
-  await new Promise(r => setTimeout(r, 300));
+  const token = await getToken();
   return new Promise((resolve, reject) => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}/api/websocket`);
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === 'auth_required') {
-        ws.send(JSON.stringify({ type: 'auth', access_token: _haToken || _cookieToken() }));
+        ws.send(JSON.stringify({ type: 'auth', access_token: token }));
       } else if (msg.type === 'auth_ok') {
         resolve();
       } else if (msg.type === 'auth_invalid') {
@@ -244,6 +265,7 @@ async function callService(domain, service, data) {
   return wsSend({ type: 'call_service', domain, service, service_data: data });
 }
 
+// ── Data ───────────────────────────────────────────────────────────────────
 const UID_PREFIX = 'private_hacs_';
 
 async function fetchRepos() {
@@ -284,18 +306,21 @@ async function fetchRepos() {
 async function loadData() {
   try {
     repos = await fetchRepos();
-    renderAll();
-    document.getElementById('stats').style.display = 'grid';
-    document.getElementById('filterBar').style.display = 'flex';
   } catch (err) {
     toast('데이터 로드 실패: ' + err.message, 'error', 8000);
     document.getElementById('repoGrid').innerHTML =
       `<div class="empty"><div class="empty-icon">⚠️</div><p>데이터를 불러오지 못했습니다.<br>${err.message}</p></div>`;
+    return;
   }
+
+  document.getElementById('stats').style.display = 'grid';
+  document.getElementById('filterBar').style.display = 'flex';
+  renderAll();
 }
 
 function renderAll() { updateStats(); renderRepos(); }
 
+// ── Stats / filter ─────────────────────────────────────────────────────────
 function updateStats() {
   document.getElementById('statTotal').textContent = repos.length;
   document.getElementById('statInstalled').textContent = repos.filter(r => r.is_installed).length;
@@ -321,6 +346,7 @@ function filteredRepos() {
   });
 }
 
+// ── Render ─────────────────────────────────────────────────────────────────
 function renderRepos() {
   const list = filteredRepos();
   const grid = document.getElementById('repoGrid');
@@ -384,6 +410,7 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── Actions ────────────────────────────────────────────────────────────────
 async function install(componentId, name) {
   busyComponents.add(componentId); renderRepos();
   toast(`${name} 설치/업데이트 중...`, 'info');
@@ -448,6 +475,7 @@ async function refreshAll() {
   }
 }
 
+// ── Add repo modal ─────────────────────────────────────────────────────────
 function openAddModal() {
   document.getElementById('addRepo').value = '';
   document.getElementById('addName').value = '';
@@ -507,6 +535,7 @@ async function submitAddRepo() {
   }
 }
 
+// ── Confirm dialog ─────────────────────────────────────────────────────────
 function showConfirm(title, msg, cb) {
   document.getElementById('confirmTitle').textContent = title;
   document.getElementById('confirmMsg').textContent = msg;
@@ -515,6 +544,7 @@ function showConfirm(title, msg, cb) {
 }
 function closeConfirm() { document.getElementById('confirmBackdrop').classList.remove('open'); }
 
+// ── Toast ──────────────────────────────────────────────────────────────────
 function toast(msg, type = 'info', duration = 3500) {
   const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
   const el = document.createElement('div');
@@ -524,18 +554,21 @@ function toast(msg, type = 'info', duration = 3500) {
   setTimeout(() => el.remove(), duration);
 }
 
+// ── Keyboard shortcuts ─────────────────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { closeAddModal(); closeConfirm(); }
 });
 
+// ── Bootstrap ──────────────────────────────────────────────────────────────
 (async () => {
   try {
     await connectWS();
     await loadData();
   } catch (err) {
-    toast('WebSocket 연결 실패: ' + err.message, 'error', 10000);
     document.getElementById('repoGrid').innerHTML =
-      `<div class="empty"><div class="empty-icon">🔌</div><p>Home Assistant 연결에 실패했습니다.<br>페이지를 새로고침 해보세요.</p></div>`;
+      `<div class="empty"><div class="empty-icon">🔌</div>
+       <p>${err.message}<br>
+       <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="location.reload()">새로고침</button></p></div>`;
   }
 })();
 </script>
