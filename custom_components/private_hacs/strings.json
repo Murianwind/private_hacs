@@ -30,48 +30,5 @@
     "error": {
       "invalid_token": "GitHub 토큰이 유효하지 않습니다."
     }
-  },
-  "services": {
-    "install": {
-      "name": "설치/업데이트",
-      "description": "지정한 컴포넌트를 설치하거나 최신 버전으로 업데이트합니다.",
-      "fields": {
-        "component_id": {
-          "name": "컴포넌트 ID",
-          "description": "설치할 custom_component의 도메인 (예: my_integration)"
-        }
-      }
-    },
-    "uninstall": {
-      "name": "삭제",
-      "description": "지정한 컴포넌트를 삭제합니다.",
-      "fields": {
-        "component_id": {
-          "name": "컴포넌트 ID",
-          "description": "삭제할 custom_component의 도메인"
-        }
-      }
-    },
-    "refresh": {
-      "name": "새로고침",
-      "description": "모든 저장소의 최신 버전 정보를 즉시 갱신합니다."
-    },
-    "add_repo": {
-      "name": "저장소 추가",
-      "description": "패널에서 호출. 저장소를 등록하고 update 엔티티를 생성합니다.",
-      "fields": {
-        "repo": { "name": "저장소", "description": "owner/repo-name" },
-        "name": { "name": "표시 이름", "description": "패널에 표시될 이름" },
-        "component_id": { "name": "컴포넌트 ID", "description": "custom_components 하위 폴더명" },
-        "branch": { "name": "브랜치", "description": "기본 브랜치 (기본값: main)" }
-      }
-    },
-    "remove_repo": {
-      "name": "저장소 제거",
-      "description": "패널에서 호출. 저장소 등록을 해제합니다 (파일은 삭제하지 않음).",
-      "fields": {
-        "component_id": { "name": "컴포넌트 ID", "description": "제거할 저장소의 component_id" }
-      }
-    }
   }
 }
