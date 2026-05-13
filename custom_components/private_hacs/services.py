@@ -6,7 +6,7 @@ import logging
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
@@ -19,6 +19,7 @@ SERVICE_UNINSTALL = "uninstall"
 SERVICE_REFRESH = "refresh"
 SERVICE_ADD_REPO = "add_repo"
 SERVICE_REMOVE_REPO = "remove_repo"
+SERVICE_GET_REPO_INFO = "get_repo_info"
 
 SCHEMA_COMPONENT = vol.Schema({vol.Required("component_id"): cv.string})
 SCHEMA_EMPTY = vol.Schema({})
@@ -31,6 +32,7 @@ SCHEMA_ADD_REPO = vol.Schema(
     }
 )
 SCHEMA_REMOVE_REPO = vol.Schema({vol.Required("component_id"): cv.string})
+SCHEMA_GET_REPO_INFO = vol.Schema({vol.Required("repo"): cv.string})
 
 
 def async_register_services(hass: HomeAssistant) -> None:
@@ -57,25 +59,32 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def handle_remove_repo(call: ServiceCall) -> None:
         await _do_remove_repo(hass, call.data["component_id"])
 
+    async def handle_get_repo_info(call: ServiceCall) -> ServiceResponse:
+        return await _do_get_repo_info(hass, call.data["repo"])
+
     _register_once(hass, SERVICE_INSTALL, handle_install, SCHEMA_COMPONENT)
     _register_once(hass, SERVICE_UNINSTALL, handle_uninstall, SCHEMA_COMPONENT)
     _register_once(hass, SERVICE_REFRESH, handle_refresh, SCHEMA_EMPTY)
     _register_once(hass, SERVICE_ADD_REPO, handle_add_repo, SCHEMA_ADD_REPO)
     _register_once(hass, SERVICE_REMOVE_REPO, handle_remove_repo, SCHEMA_REMOVE_REPO)
+    _register_once(
+        hass, SERVICE_GET_REPO_INFO, handle_get_repo_info, SCHEMA_GET_REPO_INFO,
+        supports_response=SupportsResponse.ONLY,
+    )
 
 
-def _register_once(hass, service, handler, schema) -> None:
+def _register_once(hass, service, handler, schema, supports_response=SupportsResponse.NONE) -> None:
     if not hass.services.has_service(DOMAIN, service):
-        hass.services.async_register(DOMAIN, service, handler, schema=schema)
+        hass.services.async_register(
+            DOMAIN, service, handler, schema=schema,
+            supports_response=supports_response,
+        )
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:
     for svc in (
-        SERVICE_INSTALL,
-        SERVICE_UNINSTALL,
-        SERVICE_REFRESH,
-        SERVICE_ADD_REPO,
-        SERVICE_REMOVE_REPO,
+        SERVICE_INSTALL, SERVICE_UNINSTALL, SERVICE_REFRESH,
+        SERVICE_ADD_REPO, SERVICE_REMOVE_REPO, SERVICE_GET_REPO_INFO,
     ):
         if hass.services.has_service(DOMAIN, svc):
             hass.services.async_remove(DOMAIN, svc)
@@ -215,3 +224,37 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
         coordinator.async_update_listeners()
 
     _LOGGER.info("Repo removed: %s", component_id)
+
+
+async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
+    """GitHub API로 저장소 정보 조회 — 토큰 사용."""
+    ed = _get_entry_data(hass)
+    if ed is None:
+        raise HomeAssistantError("Private HACS가 로드되지 않았습니다.")
+
+    github = ed["github"]
+
+    try:
+        repo_info = await github.get_repo_info(repo)
+    except Exception as exc:
+        raise HomeAssistantError(f"저장소 조회 실패: {exc}") from exc
+
+    if repo_info is None:
+        raise HomeAssistantError(f"저장소 '{repo}'를 찾을 수 없습니다.")
+
+    # custom_components 하위 폴더 목록 조회
+    component_ids: list[str] = []
+    try:
+        contents = await github.get_contents(repo, "custom_components")
+        if contents:
+            component_ids = [f["name"] for f in contents if f.get("type") == "dir"]
+    except Exception:
+        pass
+
+    return {
+        "name": repo_info.get("name", repo.split("/")[1]),
+        "description": repo_info.get("description") or "",
+        "default_branch": repo_info.get("default_branch", "main"),
+        "full_name": repo_info.get("full_name", repo),
+        "component_ids": component_ids,
+    }
