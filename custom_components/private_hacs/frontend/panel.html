@@ -197,33 +197,13 @@
 let repos = [];
 let activeTab = 'all';
 let busyComponents = new Set();
-let _haToken = '';
 
-// 토큰을 Promise로 관리 — 받을 때까지 연결 대기
-let _tokenResolve = null;
-const _tokenPromise = new Promise((resolve) => { _tokenResolve = resolve; });
-
-window.addEventListener('message', (e) => {
-  if (e.data?.type === 'ha_token' && e.data.token) {
-    _haToken = e.data.token;
-    _tokenResolve(e.data.token);
-  }
-});
-
-function _cookieToken() {
-  return document.cookie.match(/ingress_token=([^;]+)/)?.[1] || '';
-}
-
-async function getToken() {
-  const cookie = _cookieToken();
-  if (cookie) return cookie;
-  // postMessage 토큰을 최대 3초 대기
-  return Promise.race([
-    _tokenPromise,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('토큰 수신 시간 초과. 페이지를 새로고침 해보세요.')), 3000)
-    ),
-  ]);
+// URL 파라미터에서 토큰 읽기 (panel.js가 hass.auth로 주입)
+function getToken() {
+  const params = new URLSearchParams(location.search);
+  const token = params.get('token');
+  if (token) return Promise.resolve(token);
+  return Promise.reject(new Error('토큰을 찾을 수 없습니다. 사이드바에서 패널을 다시 열어보세요.'));
 }
 
 // ── WebSocket ──────────────────────────────────────────────────────────────
@@ -243,7 +223,7 @@ async function connectWS() {
       } else if (msg.type === 'auth_ok') {
         resolve();
       } else if (msg.type === 'auth_invalid') {
-        reject(new Error('HA 인증 실패. 페이지를 새로고침 해보세요.'));
+        reject(new Error('HA 인증 실패. 사이드바에서 패널을 다시 열어보세요.'));
       } else if (msg.id && pending[msg.id]) {
         pending[msg.id](msg);
         delete pending[msg.id];
@@ -251,18 +231,6 @@ async function connectWS() {
     };
     ws.onerror = () => reject(new Error('WebSocket 연결 오류'));
   });
-}
-
-function wsSend(msg) {
-  return new Promise((resolve) => {
-    const id = msgId++;
-    pending[id] = resolve;
-    ws.send(JSON.stringify({ ...msg, id }));
-  });
-}
-
-async function callService(domain, service, data) {
-  return wsSend({ type: 'call_service', domain, service, service_data: data });
 }
 
 // ── Data ───────────────────────────────────────────────────────────────────
