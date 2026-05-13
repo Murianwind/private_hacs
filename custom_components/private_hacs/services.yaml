@@ -11,8 +11,8 @@ install:
         text:
 
 uninstall:
-  name: 삭제
-  description: 지정한 private 컴포넌트를 삭제합니다.
+  name: 파일 삭제
+  description: 지정한 컴포넌트의 파일을 삭제합니다. 저장소 등록은 유지됩니다.
   fields:
     component_id:
       name: 컴포넌트 ID
@@ -25,3 +25,48 @@ uninstall:
 refresh:
   name: 새로고침
   description: 모든 저장소의 최신 버전 정보를 즉시 갱신합니다.
+
+add_repo:
+  name: 저장소 추가
+  description: 새 저장소를 Private HACS에 등록합니다.
+  fields:
+    repo:
+      name: 저장소
+      description: "GitHub 저장소 경로 (예: owner/repo-name)"
+      required: true
+      example: "your-org/your-private-integration"
+      selector:
+        text:
+    name:
+      name: 표시 이름
+      description: 패널에 표시될 이름
+      required: true
+      example: "My Integration"
+      selector:
+        text:
+    component_id:
+      name: 컴포넌트 ID
+      description: custom_components 하위 폴더명 (snake_case)
+      required: true
+      example: "my_integration"
+      selector:
+        text:
+    branch:
+      name: 기본 브랜치
+      description: "기본 브랜치 이름 (기본값: main)"
+      required: false
+      example: "main"
+      selector:
+        text:
+
+remove_repo:
+  name: 저장소 제거
+  description: 저장소 등록을 해제합니다. 설치된 파일은 삭제되지 않습니다.
+  fields:
+    component_id:
+      name: 컴포넌트 ID
+      description: 제거할 저장소의 component_id
+      required: true
+      example: "my_integration"
+      selector:
+        text:
