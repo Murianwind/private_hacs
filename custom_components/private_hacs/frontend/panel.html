@@ -384,4 +384,160 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-a
+async function install(componentId, name) {
+  busyComponents.add(componentId); renderRepos();
+  toast(`${name} 설치/업데이트 중...`, 'info');
+  try {
+    await callService('private_hacs', 'install', { component_id: componentId });
+    toast(`${name} 설치 완료! HA를 재시작해야 적용됩니다.`, 'success', 6000);
+    repos = await fetchRepos(); renderAll();
+  } catch (err) {
+    toast(`설치 실패: ${err.message}`, 'error', 6000);
+  } finally {
+    busyComponents.delete(componentId); renderRepos();
+  }
+}
+
+async function uninstall(componentId, name) {
+  showConfirm('파일 삭제',
+    `${name}의 파일을 삭제하시겠습니까?\n\n저장소 등록은 유지됩니다.\n삭제 후 HA를 재시작해야 완전히 제거됩니다.`,
+    async () => {
+      busyComponents.add(componentId); renderRepos();
+      toast(`${name} 삭제 중...`, 'info');
+      try {
+        await callService('private_hacs', 'uninstall', { component_id: componentId });
+        toast(`${name} 삭제 완료. HA를 재시작하세요.`, 'success', 6000);
+        repos = await fetchRepos(); renderAll();
+      } catch (err) {
+        toast(`삭제 실패: ${err.message}`, 'error', 6000);
+      } finally {
+        busyComponents.delete(componentId); renderRepos();
+      }
+    });
+}
+
+async function removeRepo(componentId, name) {
+  showConfirm('저장소 등록 해제',
+    `${name}을(를) Private HACS에서 제거하시겠습니까?\n\n설치된 파일은 삭제되지 않습니다.`,
+    async () => {
+      toast(`${name} 등록 해제 중...`, 'info');
+      try {
+        await callService('private_hacs', 'remove_repo', { component_id: componentId });
+        toast(`${name} 등록 해제 완료.`, 'success');
+        await new Promise(r => setTimeout(r, 1500));
+        repos = await fetchRepos(); renderAll();
+      } catch (err) {
+        toast(`등록 해제 실패: ${err.message}`, 'error', 6000);
+      }
+    });
+}
+
+async function refreshAll() {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true; btn.textContent = '⏳ 새로고침 중...';
+  toast('버전 정보 새로고침 중...', 'info');
+  try {
+    await callService('private_hacs', 'refresh', {});
+    await new Promise(r => setTimeout(r, 2000));
+    repos = await fetchRepos(); renderAll();
+    toast('새로고침 완료', 'success');
+  } catch (err) {
+    toast('새로고침 실패: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '🔄 새로고침';
+  }
+}
+
+function openAddModal() {
+  document.getElementById('addRepo').value = '';
+  document.getElementById('addName').value = '';
+  document.getElementById('addComponentId').value = '';
+  document.getElementById('addComponentId').dataset.userEdited = '';
+  document.getElementById('addName').dataset.userEdited = '';
+  document.getElementById('addBranch').value = 'main';
+  document.getElementById('addModal').classList.add('open');
+  setTimeout(() => document.getElementById('addRepo').focus(), 50);
+}
+
+function closeAddModal() {
+  document.getElementById('addModal').classList.remove('open');
+}
+
+document.getElementById('addRepo').addEventListener('input', (e) => {
+  const parts = e.target.value.split('/');
+  if (parts.length >= 2 && parts[1]) {
+    const repoName = parts[1];
+    if (!document.getElementById('addComponentId').dataset.userEdited)
+      document.getElementById('addComponentId').value = repoName.replace(/-/g, '_').toLowerCase();
+    if (!document.getElementById('addName').dataset.userEdited)
+      document.getElementById('addName').value = repoName;
+  }
+});
+document.getElementById('addComponentId').addEventListener('input', (e) => { e.target.dataset.userEdited = '1'; });
+document.getElementById('addName').addEventListener('input', (e) => { e.target.dataset.userEdited = '1'; });
+
+async function submitAddRepo() {
+  const repo = document.getElementById('addRepo').value.trim();
+  const name = document.getElementById('addName').value.trim();
+  const componentId = document.getElementById('addComponentId').value.trim();
+  const branch = document.getElementById('addBranch').value.trim() || 'main';
+
+  if (!repo || !name || !componentId) {
+    toast('저장소, 표시 이름, 컴포넌트 ID는 필수입니다.', 'warning'); return;
+  }
+  if (!/^[a-zA-Z0-9_\-]+\/[a-zA-Z0-9_\-\.]+$/.test(repo)) {
+    toast('저장소 형식이 올바르지 않습니다. (예: owner/repo-name)', 'warning'); return;
+  }
+  if (!/^[a-z0-9_]+$/.test(componentId)) {
+    toast('컴포넌트 ID는 소문자, 숫자, 밑줄(_)만 사용 가능합니다.', 'warning'); return;
+  }
+
+  const btn = document.getElementById('addSubmitBtn');
+  btn.disabled = true; btn.textContent = '추가 중...';
+  try {
+    await callService('private_hacs', 'add_repo', { repo, name, component_id: componentId, branch });
+    closeAddModal();
+    toast(`${name} 저장소가 추가됐습니다. 버전 정보를 가져오는 중...`, 'success', 5000);
+    await new Promise(r => setTimeout(r, 3000));
+    repos = await fetchRepos(); renderAll();
+  } catch (err) {
+    toast(`저장소 추가 실패: ${err.message}`, 'error', 6000);
+  } finally {
+    btn.disabled = false; btn.textContent = '추가';
+  }
+}
+
+function showConfirm(title, msg, cb) {
+  document.getElementById('confirmTitle').textContent = title;
+  document.getElementById('confirmMsg').textContent = msg;
+  document.getElementById('confirmOkBtn').onclick = () => { closeConfirm(); cb(); };
+  document.getElementById('confirmBackdrop').classList.add('open');
+}
+function closeConfirm() { document.getElementById('confirmBackdrop').classList.remove('open'); }
+
+function toast(msg, type = 'info', duration = 3500) {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>`;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), duration);
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeAddModal(); closeConfirm(); }
+});
+
+(async () => {
+  try {
+    await connectWS();
+    await loadData();
+  } catch (err) {
+    toast('WebSocket 연결 실패: ' + err.message, 'error', 10000);
+    document.getElementById('repoGrid').innerHTML =
+      `<div class="empty"><div class="empty-icon">🔌</div><p>Home Assistant 연결에 실패했습니다.<br>페이지를 새로고침 해보세요.</p></div>`;
+  }
+})();
+</script>
+</body>
+</html>
