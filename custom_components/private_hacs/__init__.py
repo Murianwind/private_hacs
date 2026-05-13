@@ -45,14 +45,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Sidebar panel
     await async_setup_panel(hass)
 
-    # Reload on options change
-    entry.async_on_unload(entry.add_update_listener(_async_reload_listener))
+    # 수정됨: 저장소를 추가/제거할 때마다 전체 컴포넌트가 재시작되어 패널이 닫히는 현상을 
+    # 막기 위해 _async_reload_listener 관련 코드를 삭제했습니다.
+    # services.py에서 이미 in-memory(coordinator) 업데이트를 처리하므로 리로드가 필요 없습니다.
 
     return True
-
-
-async def _async_reload_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
