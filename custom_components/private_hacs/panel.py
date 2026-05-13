@@ -14,41 +14,45 @@ _LOGGER = logging.getLogger(__name__)
 
 _REGISTERED_HASS_IDS: set[int] = set()
 
-_PANEL_JS = """customElements.define('private-hacs-panel', class extends HTMLElement {
-  connectedCallback() {
-    if (this.shadowRoot) return;
-    const shadow = this.attachShadow({ mode: 'open' });
-    const iframe = document.createElement('iframe');
-    iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
-    shadow.appendChild(iframe);
 
-    // hass 객체가 set될 때까지 대기 후 토큰을 URL 파라미터로 전달
-    this._iframe = iframe;
-    if (this._hass) {
-      this._loadWithToken(this._hass);
-    }
-  }
-
-  set hass(hass) {
-    this._hass = hass;
-    if (this._iframe && !this._loaded) {
-      this._loadWithToken(hass);
-    }
-  }
-
-  _loadWithToken(hass) {
-    const token = hass?.auth?.data?.access_token || '';
-    if (!token) return;
-    this._loaded = true;
-    this._iframe.src = '/private_hacs_panel/panel.html?token=' + encodeURIComponent(token);
-  }
-});"""
-
-
-def _write_panel_js_sync(path: str) -> None:
+def _write_panel_js_sync(path: str, panel_html: str) -> None:
     """Blocking write — must be called via executor."""
+    # panel.html 내용을 JS 문자열로 escape해서 Web Component에 직접 삽입
+    escaped = panel_html.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
+    js = f"""customElements.define('private-hacs-panel', class extends HTMLElement {{
+  connectedCallback() {{
+    if (this._initialized) return;
+    this._initialized = true;
+    this.attachShadow({{ mode: 'open' }});
+    this.shadowRoot.innerHTML = `{escaped}`;
+    this._initPanel();
+  }}
+
+  set hass(hass) {{
+    this._hass = hass;
+    if (!this._tokenSent && hass?.auth?.data?.access_token) {{
+      this._tokenSent = true;
+      const token = hass.auth.data.access_token;
+      // 패널 내부 스크립트에 토큰 전달
+      if (this._resolveToken) this._resolveToken(token);
+    }}
+  }}
+
+  _initPanel() {{
+    // 토큰 Promise를 shadow DOM의 window 컨텍스트에 노출
+    const self = this;
+    this.shadowRoot._getToken = () => new Promise((resolve, reject) => {{
+      if (self._hass?.auth?.data?.access_token) {{
+        resolve(self._hass.auth.data.access_token);
+      }} else {{
+        self._resolveToken = resolve;
+        setTimeout(() => reject(new Error('hass 토큰 수신 시간 초과')), 5000);
+      }}
+    }});
+  }}
+}});"""
     with open(path, "w", encoding="utf-8") as f:
-        f.write(_PANEL_JS)
+        f.write(js)
 
 
 async def async_setup_panel(hass: HomeAssistant) -> None:
@@ -67,17 +71,18 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     js_dir = os.path.join(panel_dir, "js")
     os.makedirs(js_dir, exist_ok=True)
 
+    panel_html = await hass.async_add_executor_job(
+        _read_file_sync, panel_file
+    )
+
     await hass.async_add_executor_job(
-        _write_panel_js_sync, os.path.join(js_dir, "panel.js")
+        _write_panel_js_sync,
+        os.path.join(js_dir, "panel.js"),
+        panel_html,
     )
 
     await hass.http.async_register_static_paths(
         [
-            StaticPathConfig(
-                url_path="/private_hacs_panel",
-                path=panel_dir,
-                cache_headers=False,
-            ),
             StaticPathConfig(
                 url_path="/private_hacs_panel/js",
                 path=js_dir,
@@ -98,6 +103,11 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
 
     _REGISTERED_HASS_IDS.add(hass_id)
     _LOGGER.info("Private HACS panel registered at /%s", PANEL_URL)
+
+
+def _read_file_sync(path: str) -> str:
+    with open(path, encoding="utf-8") as f:
+        return f.read()
 
 
 async def async_remove_panel(hass: HomeAssistant) -> None:
