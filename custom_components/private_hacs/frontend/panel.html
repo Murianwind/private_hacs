@@ -339,6 +339,19 @@
 let repos = [];
 let activeTab = 'all';
 let busyComponents = new Set();
+let _haToken = '';
+
+// ── Token: receive from parent Web Component via postMessage ───────────
+window.addEventListener('message', (e) => {
+  if (e.data?.type === 'ha_token' && e.data.token) {
+    _haToken = e.data.token;
+  }
+});
+
+// Also attempt to read from cookie (HA Ingress fallback)
+function _readTokenFromCookie() {
+  return document.cookie.match(/ingress_token=([^;]+)/)?.[1] || '';
+}
 
 // ── HA WebSocket ───────────────────────────────────────
 let ws = null;
@@ -346,6 +359,9 @@ let msgId = 1;
 const pending = {};
 
 async function connectWS() {
+  // Wait up to 2s for token from postMessage before falling back
+  await new Promise(r => setTimeout(r, 300));
+
   return new Promise((resolve, reject) => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}/api/websocket`);
@@ -354,25 +370,19 @@ async function connectWS() {
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === 'auth_required') {
-        ws.send(JSON.stringify({ type: 'auth', access_token: getToken() }));
+        const token = _haToken || _readTokenFromCookie();
+        ws.send(JSON.stringify({ type: 'auth', access_token: token }));
       } else if (msg.type === 'auth_ok') {
         resolve();
       } else if (msg.type === 'auth_invalid') {
-        reject(new Error('Auth failed'));
+        reject(new Error('HA 인증 실패. 페이지를 새로고침 해보세요.'));
       } else if (msg.id && pending[msg.id]) {
         pending[msg.id](msg);
         delete pending[msg.id];
       }
     };
-    ws.onerror = () => reject(new Error('WS error'));
+    ws.onerror = () => reject(new Error('WebSocket 연결 오류'));
   });
-}
-
-function getToken() {
-  // HA Ingress / panel context passes the token via window
-  return window.hassConnection?.auth?.data?.access_token
-      || document.cookie.match(/ingress_token=([^;]+)/)?.[1]
-      || '';
 }
 
 function wsSend(msg) {
@@ -399,16 +409,35 @@ async function getStates() {
 }
 
 // ── Data loading ───────────────────────────────────────
+// Private HACS entities are identified by unique_id prefix "private_hacs_"
+// which is set in update.py: f"{DOMAIN}_{component_id}"
+const PRIVATE_HACS_UNIQUE_ID_PREFIX = 'private_hacs_';
+
 async function loadData() {
   try {
-    const states = await getStates();
-    const updateEntities = states.filter(s =>
-      s.entity_id.startsWith('update.') &&
-      s.attributes.friendly_name &&
-      s.entity_id.includes('_update')
+    // Get entity registry to identify only our entities by unique_id
+    const [statesRes, entityRegRes] = await Promise.all([
+      wsSend({ type: 'get_states' }),
+      wsSend({ type: 'config/entity_registry/list' }),
+    ]);
+
+    const states = statesRes.result || [];
+    const entityReg = entityRegRes.result || [];
+
+    // Collect entity_ids that belong to private_hacs (by unique_id prefix)
+    const ourEntityIds = new Set(
+      entityReg
+        .filter(e =>
+          e.unique_id?.startsWith(PRIVATE_HACS_UNIQUE_ID_PREFIX) &&
+          e.platform === 'private_hacs'
+        )
+        .map(e => e.entity_id)
     );
 
-    // Also call refresh to get coordinator data
+    const updateEntities = states.filter(s =>
+      s.entity_id.startsWith('update.') && ourEntityIds.has(s.entity_id)
+    );
+
     repos = buildRepoData(updateEntities);
     updateStats();
     renderRepos();
@@ -619,8 +648,23 @@ async function refreshAll() {
 }
 
 async function reloadData() {
-  const states = await getStates();
-  const updateEntities = states.filter(s => s.entity_id.startsWith('update.'));
+  const [statesRes, entityRegRes] = await Promise.all([
+    wsSend({ type: 'get_states' }),
+    wsSend({ type: 'config/entity_registry/list' }),
+  ]);
+  const states = statesRes.result || [];
+  const entityReg = entityRegRes.result || [];
+  const ourEntityIds = new Set(
+    entityReg
+      .filter(e =>
+        e.unique_id?.startsWith(PRIVATE_HACS_UNIQUE_ID_PREFIX) &&
+        e.platform === 'private_hacs'
+      )
+      .map(e => e.entity_id)
+  );
+  const updateEntities = states.filter(s =>
+    s.entity_id.startsWith('update.') && ourEntityIds.has(s.entity_id)
+  );
   repos = buildRepoData(updateEntities);
   updateStats();
   renderRepos();

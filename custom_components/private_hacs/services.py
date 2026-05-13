@@ -22,7 +22,7 @@ SCHEMA_EMPTY = vol.Schema({})
 
 
 def async_register_services(hass: HomeAssistant) -> None:
-    """Register all Private HACS services."""
+    """Register all Private HACS services (idempotent)."""
 
     async def handle_install(call: ServiceCall) -> None:
         component_id: str = call.data["component_id"]
@@ -35,15 +35,18 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def handle_refresh(call: ServiceCall) -> None:
         await _do_refresh(hass)
 
-    hass.services.async_register(
-        DOMAIN, SERVICE_INSTALL, handle_install, schema=SCHEMA_COMPONENT
-    )
-    hass.services.async_register(
-        DOMAIN, SERVICE_UNINSTALL, handle_uninstall, schema=SCHEMA_COMPONENT
-    )
-    hass.services.async_register(
-        DOMAIN, SERVICE_REFRESH, handle_refresh, schema=SCHEMA_EMPTY
-    )
+    if not hass.services.has_service(DOMAIN, SERVICE_INSTALL):
+        hass.services.async_register(
+            DOMAIN, SERVICE_INSTALL, handle_install, schema=SCHEMA_COMPONENT
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_UNINSTALL):
+        hass.services.async_register(
+            DOMAIN, SERVICE_UNINSTALL, handle_uninstall, schema=SCHEMA_COMPONENT
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
+        hass.services.async_register(
+            DOMAIN, SERVICE_REFRESH, handle_refresh, schema=SCHEMA_EMPTY
+        )
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:

@@ -6,7 +6,7 @@ import logging
 from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -60,7 +60,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             name="Private HACS",
             manufacturer="private-hacs",
             model="Private Repository Manager",
-            entry_type="service",  # type: ignore[arg-type]
+            entry_type=DeviceEntryType.SERVICE,
         )
 
     @property
