@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
+from homeassistant.components.frontend import async_register_built_in_panel
 from homeassistant.components.panel_custom import async_register_panel
 from homeassistant.core import HomeAssistant
 
@@ -11,7 +12,6 @@ from .const import DOMAIN, PANEL_ICON, PANEL_TITLE, PANEL_URL
 
 _LOGGER = logging.getLogger(__name__)
 
-# Track registration state per hass instance to survive integration reloads
 _REGISTERED_HASS_IDS: set[int] = set()
 
 
@@ -28,25 +28,32 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         _LOGGER.error("Panel HTML not found at %s", panel_file)
         return
 
-    # Serve the frontend directory as static files.
-    # panel.html is served as a full-page URL loaded inside a custom JS panel.
-    hass.http.register_static_path(
-        "/private_hacs_panel",
-        panel_dir,
-        cache_headers=False,
+    # HA 2024.x: register_static_path → async_register_static_paths
+    from homeassistant.components.http import StaticPathConfig
+
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                url_path="/private_hacs_panel",
+                path=panel_dir,
+                cache_headers=False,
+            )
+        ]
     )
 
-    # Build a minimal JS web component that wraps the HTML page in an iframe.
-    # This avoids using the deprecated "iframe" component_name while keeping
-    # the full-page HTML panel approach.
+    # JS Web Component wrapper
     js_dir = os.path.join(panel_dir, "js")
     os.makedirs(js_dir, exist_ok=True)
     _write_panel_js(os.path.join(js_dir, "panel.js"))
 
-    hass.http.register_static_path(
-        "/private_hacs_panel/js",
-        js_dir,
-        cache_headers=False,
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                url_path="/private_hacs_panel/js",
+                path=js_dir,
+                cache_headers=False,
+            )
+        ]
     )
 
     await async_register_panel(
@@ -64,7 +71,7 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
 
 
 def _write_panel_js(path: str) -> None:
-    """Write the Web Component JS file that renders panel.html in an iframe."""
+    """Write the Web Component JS that wraps panel.html in an iframe."""
     js = """
 customElements.define('private-hacs-panel', class extends HTMLElement {
   connectedCallback() {
@@ -72,15 +79,9 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
     const shadow = this.attachShadow({ mode: 'open' });
     const iframe = document.createElement('iframe');
     iframe.src = '/private_hacs_panel/panel.html';
-    iframe.style.cssText = [
-      'width:100%',
-      'height:100%',
-      'border:none',
-      'display:block',
-    ].join(';');
+    iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
     shadow.appendChild(iframe);
 
-    // Pass the HA auth token to the iframe once it loads
     iframe.addEventListener('load', () => {
       try {
         const token =
@@ -91,9 +92,7 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
     });
   }
 
-  set hass(hass) {
-    // Forward hass object updates are not needed for this panel
-  }
+  set hass(_) {}
 });
 """.strip()
     with open(path, "w", encoding="utf-8") as f:
