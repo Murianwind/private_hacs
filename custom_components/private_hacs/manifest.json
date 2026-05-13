@@ -1,0 +1,12 @@
+{
+  "domain": "private_hacs",
+  "name": "Private HACS",
+  "version": "1.0.0",
+  "config_flow": true,
+  "dependencies": [],
+  "codeowners": [],
+  "requirements": [],
+  "iot_class": "cloud_polling",
+  "documentation": "https://github.com/your-id/private-hacs",
+  "issue_tracker": "https://github.com/your-id/private-hacs/issues"
+}

@@ -1,0 +1,27 @@
+install:
+  name: 설치/업데이트
+  description: 지정한 private 컴포넌트를 설치하거나 최신 버전으로 업데이트합니다.
+  fields:
+    component_id:
+      name: 컴포넌트 ID
+      description: 설치할 custom_component의 도메인 (예: my_integration)
+      required: true
+      example: "my_integration"
+      selector:
+        text:
+
+uninstall:
+  name: 삭제
+  description: 지정한 private 컴포넌트를 삭제합니다.
+  fields:
+    component_id:
+      name: 컴포넌트 ID
+      description: 삭제할 custom_component의 도메인
+      required: true
+      example: "my_integration"
+      selector:
+        text:
+
+refresh:
+  name: 새로고침
+  description: 모든 저장소의 최신 버전 정보를 즉시 갱신합니다.

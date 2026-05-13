@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Private HACS 설정",
+        "description": "Private GitHub 저장소를 HACS처럼 관리합니다.\n\n**GitHub PAT** (private 저장소 필수, `repo` scope)\n\n**저장소 목록** JSON 예시:\n```json\n[\n  {\n    \"repo\": \"your-org/your-private-integration\",\n    \"name\": \"My Integration\",\n    \"component_id\": \"my_integration\",\n    \"branch\": \"main\"\n  }\n]\n```",
+        "data": {
+          "github_token": "GitHub Personal Access Token",
+          "repositories": "저장소 목록 (JSON)"
+        }
+      }
+    },
+    "error": {
+      "invalid_repos_json": "올바른 JSON 형식이 아닙니다. repo / name / component_id 필드가 필요합니다.",
+      "invalid_token": "GitHub 토큰이 유효하지 않습니다."
+    },
+    "abort": {
+      "already_configured": "Private HACS가 이미 설정되어 있습니다.",
+      "single_instance_allowed": "하나의 인스턴스만 허용됩니다."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Private HACS 설정 수정",
+        "data": {
+          "github_token": "GitHub Personal Access Token",
+          "repositories": "저장소 목록 (JSON)"
+        }
+      }
+    },
+    "error": {
+      "invalid_repos_json": "올바른 JSON 형식이 아닙니다.",
+      "invalid_token": "GitHub 토큰이 유효하지 않습니다."
+    }
+  },
+  "services": {
+    "install": {
+      "name": "설치/업데이트",
+      "description": "지정한 컴포넌트를 설치하거나 최신 버전으로 업데이트합니다.",
+      "fields": {
+        "component_id": {
+          "name": "컴포넌트 ID",
+          "description": "설치할 custom_component의 도메인 (예: my_integration)"
+        }
+      }
+    },
+    "uninstall": {
+      "name": "삭제",
+      "description": "지정한 컴포넌트를 삭제합니다.",
+      "fields": {
+        "component_id": {
+          "name": "컴포넌트 ID",
+          "description": "삭제할 custom_component의 도메인"
+        }
+      }
+    },
+    "refresh": {
+      "name": "새로고침",
+      "description": "모든 저장소의 버전 정보를 즉시 갱신합니다."
+    }
+  }
+}
