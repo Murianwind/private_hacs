@@ -15,7 +15,8 @@ _LOGGER = logging.getLogger(__name__)
 
 _REGISTERED_HASS_IDS: set[int] = set()
 
-_PANEL_JS = r"""\
+# panel.html을 fetch로 로드 — HTML을 JS에 직접 삽입하지 않으므로 이스케이프 문제 없음
+_PANEL_JS = """\
 customElements.define('private-hacs-panel', class extends HTMLElement {
   connectedCallback() {
     if (this._initialized) return;
@@ -26,7 +27,7 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    if (!this._tokenSent && hass?.auth?.data?.access_token) {
+    if (!this._tokenSent && hass && hass.auth && hass.auth.data && hass.auth.data.access_token) {
       this._tokenSent = true;
       if (this._resolveToken) this._resolveToken(hass.auth.data.access_token);
     }
@@ -35,46 +36,51 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
   async _loadHTML() {
     try {
       const resp = await fetch('/private_hacs_panel/panel.html');
+      if (!resp.ok) throw new Error('panel.html fetch failed: ' + resp.status);
       const html = await resp.text();
 
-      // _getToken을 window에 직접 노출 (script가 window 컨텍스트에서 실행되므로)
+      // _getToken을 window에 노출 (script가 window 컨텍스트에서 실행됨)
       const self = this;
-      window.__privateHacsGetToken = () => new Promise((resolve, reject) => {
-        if (self._hass?.auth?.data?.access_token) {
-          resolve(self._hass.auth.data.access_token);
-        } else {
-          self._resolveToken = resolve;
-          setTimeout(() => reject(new Error('hass 토큰 수신 시간 초과')), 5000);
-        }
-      });
+      window.__privateHacsGetToken = function() {
+        return new Promise(function(resolve, reject) {
+          if (self._hass && self._hass.auth && self._hass.auth.data && self._hass.auth.data.access_token) {
+            resolve(self._hass.auth.data.access_token);
+          } else {
+            self._resolveToken = resolve;
+            setTimeout(function() {
+              reject(new Error('hass 토큰 수신 시간 초과'));
+            }, 5000);
+          }
+        });
+      };
 
-      // style 추출 후 <style> 태그로 삽입
-      const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+      // style 추출 후 삽입
+      const styleMatch = html.match(/<style>([\\s\\S]*?)<\\/style>/);
       if (styleMatch) {
         const style = document.createElement('style');
         style.textContent = styleMatch[1];
         this.appendChild(style);
       }
 
-      // body 내용 삽입 (script 제외)
-      const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/);
+      // body 내용 삽입 (script 태그 제외)
+      const bodyMatch = html.match(/<body[^>]*>([\\s\\S]*?)<\\/body>/);
       if (bodyMatch) {
         const div = document.createElement('div');
-        div.innerHTML = bodyMatch[1].replace(/<script[\s\S]*?<\/script>/gi, '');
+        div.innerHTML = bodyMatch[1].replace(/<script[\\s\\S]*?<\\/script>/gi, '');
         this.appendChild(div);
       }
 
-      // script 실행 (window 컨텍스트 — _getToken 주입 후)
-      const scriptMatches = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
-      for (const m of scriptMatches) {
+      // script 태그를 추출해서 document.head에 추가 (window 컨텍스트 실행)
+      const scriptRe = /<script[^>]*>([\\s\\S]*?)<\\/script>/gi;
+      let m;
+      while ((m = scriptRe.exec(html)) !== null) {
         const script = document.createElement('script');
         script.textContent = m[1];
         document.head.appendChild(script);
       }
 
-    } catch (err) {
-      this.innerHTML =
-        '<p style="color:red;padding:24px">패널 로드 실패: ' + err.message + '</p>';
+    } catch(err) {
+      this.innerHTML = '<p style="color:red;padding:24px">패널 로드 실패: ' + err.message + '</p>';
     }
   }
 });
