@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
+from homeassistant.components.frontend import async_remove_panel as frontend_remove_panel
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.panel_custom import async_register_panel
 from homeassistant.core import HomeAssistant
@@ -19,8 +20,7 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
   connectedCallback() {
     if (this._initialized) return;
     this._initialized = true;
-    this.style.cssText = 'display:block;width:100%;height:100%;';
-    this.attachShadow({ mode: 'open' });
+    this.style.cssText = 'display:block;width:100%;height:100%;overflow:auto;';
     this._loadHTML();
   }
 
@@ -37,26 +37,9 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
       const resp = await fetch('/private_hacs_panel/panel.html');
       const html = await resp.text();
 
-      // <style> 삽입
-      const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
-      if (styleMatch) {
-        const style = document.createElement('style');
-        style.textContent = styleMatch[1];
-        this.shadowRoot.appendChild(style);
-      }
-
-      // <body> 내용 삽입 (script 제외)
-      const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/);
-      if (bodyMatch) {
-        const div = document.createElement('div');
-        div.style.cssText = 'min-height:100vh;';
-        div.innerHTML = bodyMatch[1].replace(/<script[\s\S]*?<\/script>/gi, '');
-        this.shadowRoot.appendChild(div);
-      }
-
-      // _getToken 주입 (script 실행 전에)
+      // _getToken을 window에 직접 노출 (script가 window 컨텍스트에서 실행되므로)
       const self = this;
-      this.shadowRoot._getToken = () => new Promise((resolve, reject) => {
+      window.__privateHacsGetToken = () => new Promise((resolve, reject) => {
         if (self._hass?.auth?.data?.access_token) {
           resolve(self._hass.auth.data.access_token);
         } else {
@@ -65,16 +48,32 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
         }
       });
 
-      // <script> 실행 (_getToken 주입 후)
+      // style 추출 후 <style> 태그로 삽입
+      const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
+      if (styleMatch) {
+        const style = document.createElement('style');
+        style.textContent = styleMatch[1];
+        this.appendChild(style);
+      }
+
+      // body 내용 삽입 (script 제외)
+      const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/);
+      if (bodyMatch) {
+        const div = document.createElement('div');
+        div.innerHTML = bodyMatch[1].replace(/<script[\s\S]*?<\/script>/gi, '');
+        this.appendChild(div);
+      }
+
+      // script 실행 (window 컨텍스트 — _getToken 주입 후)
       const scriptMatches = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)];
       for (const m of scriptMatches) {
         const script = document.createElement('script');
         script.textContent = m[1];
-        this.shadowRoot.appendChild(script);
+        document.head.appendChild(script);
       }
 
     } catch (err) {
-      this.shadowRoot.innerHTML =
+      this.innerHTML =
         '<p style="color:red;padding:24px">패널 로드 실패: ' + err.message + '</p>';
     }
   }
@@ -139,5 +138,5 @@ async def async_remove_panel(hass: HomeAssistant) -> None:
     hass_id = id(hass)
     if hass_id not in _REGISTERED_HASS_IDS:
         return
-    hass.components.frontend.async_remove_panel(PANEL_URL)
+    frontend_remove_panel(hass, PANEL_URL)
     _REGISTERED_HASS_IDS.discard(hass_id)
