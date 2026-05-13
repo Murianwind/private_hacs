@@ -20,52 +20,16 @@
     --radius: 12px;
     --radius-sm: 8px;
   }
-
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--surface); color: var(--text); min-height: 100vh; }
 
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: var(--surface);
-    color: var(--text);
-    min-height: 100vh;
-  }
-
-  /* ── Header ── */
-  .header {
-    background: var(--surface2);
-    border-bottom: 1px solid var(--border);
-    padding: 0 24px;
-    height: 64px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-  }
-
+  .header { background: var(--surface2); border-bottom: 1px solid var(--border); padding: 0 24px; height: 64px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
   .header-left { display: flex; align-items: center; gap: 12px; }
-
-  .header-icon {
-    width: 36px; height: 36px;
-    background: linear-gradient(135deg, var(--primary), #7c4dff);
-    border-radius: 10px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 18px;
-  }
-
+  .header-icon { width: 36px; height: 36px; background: linear-gradient(135deg, var(--primary), #7c4dff); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
   .header h1 { font-size: 20px; font-weight: 600; }
-
   .header-actions { display: flex; gap: 8px; }
 
-  /* ── Buttons ── */
-  .btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 8px 16px;
-    border: none; border-radius: var(--radius-sm);
-    font-size: 13px; font-weight: 500;
-    cursor: pointer; transition: all .15s;
-  }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; }
   .btn:active { transform: scale(.97); }
   .btn-primary { background: var(--primary); color: #fff; }
   .btn-primary:hover { background: var(--primary-dark); }
@@ -79,184 +43,69 @@
   .btn-danger:hover { background: var(--danger); color: #fff; }
   .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
   .btn-sm { padding: 5px 12px; font-size: 12px; }
-  .btn-icon { width: 36px; height: 36px; padding: 0; justify-content: center; }
 
-  /* ── Main layout ── */
   .main { max-width: 1100px; margin: 0 auto; padding: 24px; }
 
-  /* ── Stats bar ── */
-  .stats {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
-    margin-bottom: 24px;
-  }
-  .stat-card {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 16px;
-    text-align: center;
-  }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; }
   .stat-number { font-size: 28px; font-weight: 700; color: var(--primary); }
   .stat-label { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
 
-  /* ── Filter bar ── */
-  .filter-bar {
-    display: flex; gap: 8px; align-items: center;
-    margin-bottom: 20px; flex-wrap: wrap;
-  }
-  .filter-bar input {
-    flex: 1; min-width: 200px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 9px 14px;
-    color: var(--text);
-    font-size: 14px;
-  }
+  .filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+  .filter-bar input { flex: 1; min-width: 200px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 14px; color: var(--text); font-size: 14px; }
   .filter-bar input:focus { outline: none; border-color: var(--primary); }
-
   .filter-tabs { display: flex; gap: 4px; }
-  .tab-btn {
-    padding: 7px 14px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 13px; cursor: pointer; transition: all .15s;
-  }
+  .tab-btn { padding: 7px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font-size: 13px; cursor: pointer; transition: all .15s; }
   .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 
-  /* ── Repo cards ── */
   .repo-grid { display: flex; flex-direction: column; gap: 12px; }
-
-  .repo-card {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    transition: border-color .15s;
-  }
+  .repo-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: flex; align-items: center; gap: 16px; transition: border-color .15s; }
   .repo-card:hover { border-color: var(--primary); }
   .repo-card.has-update { border-left: 3px solid var(--warning); }
-
-  .repo-icon {
-    width: 48px; height: 48px; flex-shrink: 0;
-    background: linear-gradient(135deg, var(--primary), #7c4dff);
-    border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 22px;
-  }
-
+  .repo-icon { width: 48px; height: 48px; flex-shrink: 0; background: linear-gradient(135deg, var(--primary), #7c4dff); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
   .repo-info { flex: 1; min-width: 0; }
   .repo-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
   .repo-repo { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
-
   .repo-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .repo-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
-  .badge {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 8px;
-    border-radius: 20px;
-    font-size: 11px; font-weight: 500;
-  }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 500; }
   .badge-installed { background: rgba(76,175,80,.2); color: var(--success); }
   .badge-update { background: rgba(255,152,0,.2); color: var(--warning); }
   .badge-not-installed { background: var(--surface3); color: var(--text-secondary); }
   .badge-version { background: var(--surface3); color: var(--text-secondary); font-family: monospace; }
-  .badge-type { background: rgba(3,169,244,.15); color: var(--primary); }
   .badge-manifest { background: rgba(124,77,255,.2); color: #b39ddb; }
 
-  .repo-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
-
-  /* ── Loading / empty ── */
-  .loading {
-    text-align: center; padding: 60px 20px; color: var(--text-secondary);
-  }
-  .spinner {
-    width: 36px; height: 36px;
-    border: 3px solid var(--border);
-    border-top-color: var(--primary);
-    border-radius: 50%;
-    animation: spin .8s linear infinite;
-    margin: 0 auto 16px;
-  }
+  .loading { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+  .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-
   .empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
   .empty-icon { font-size: 48px; margin-bottom: 12px; }
 
-  /* ── Toast ── */
-  .toast-container {
-    position: fixed; bottom: 24px; right: 24px;
-    display: flex; flex-direction: column; gap: 8px;
-    z-index: 9999; pointer-events: none;
-  }
-  .toast {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 12px 16px;
-    font-size: 13px;
-    min-width: 260px;
-    pointer-events: auto;
-    animation: slideIn .25s ease;
-    display: flex; align-items: center; gap: 10px;
-  }
+  .toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; pointer-events: none; }
+  .toast { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 16px; font-size: 13px; min-width: 260px; pointer-events: auto; animation: slideIn .25s ease; display: flex; align-items: center; gap: 10px; }
   .toast.success { border-left: 3px solid var(--success); }
-  .toast.error   { border-left: 3px solid var(--danger);  }
+  .toast.error   { border-left: 3px solid var(--danger); }
   .toast.info    { border-left: 3px solid var(--primary); }
   .toast.warning { border-left: 3px solid var(--warning); }
   @keyframes slideIn { from { transform: translateX(100%); opacity:0; } to { transform: none; opacity:1; } }
 
-  /* ── Modal ── */
-  .modal-backdrop {
-    display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,.6); z-index: 500;
-    align-items: center; justify-content: center;
-  }
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 500; align-items: center; justify-content: center; }
   .modal-backdrop.open { display: flex; }
-  .modal {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 28px;
-    width: 90%; max-width: 520px;
-    max-height: 85vh; overflow-y: auto;
-  }
+  .modal { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; width: 90%; max-width: 480px; }
   .modal h2 { font-size: 18px; margin-bottom: 20px; }
-  .modal label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; margin-top: 14px; }
-  .modal input, .modal textarea {
-    width: 100%;
-    background: var(--surface3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
-    color: var(--text); font-size: 13px;
-  }
-  .modal textarea { height: 160px; resize: vertical; font-family: monospace; }
-  .modal input:focus, .modal textarea:focus { outline: none; border-color: var(--primary); }
+  .modal-field { margin-bottom: 14px; }
+  .modal-field label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
+  .modal-field input { width: 100%; background: var(--surface3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 12px; color: var(--text); font-size: 13px; }
+  .modal-field input:focus { outline: none; border-color: var(--primary); }
+  .modal-field .hint { font-size: 11px; color: var(--text-secondary); margin-top: 4px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 
-  /* ── Confirm dialog ── */
-  .confirm-backdrop {
-    display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,.6); z-index: 600;
-    align-items: center; justify-content: center;
-  }
+  .confirm-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 600; align-items: center; justify-content: center; }
   .confirm-backdrop.open { display: flex; }
-  .confirm-box {
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 28px; width: 90%; max-width: 380px;
-  }
+  .confirm-box { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; width: 90%; max-width: 380px; }
   .confirm-box h3 { margin-bottom: 12px; }
-  .confirm-box p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; }
+  .confirm-box p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.5; white-space: pre-line; }
   .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
   @media (max-width: 600px) {
@@ -267,62 +116,69 @@
 </head>
 <body>
 
-<!-- Header -->
 <div class="header">
   <div class="header-left">
     <div class="header-icon">🔒</div>
     <h1>Private HACS</h1>
   </div>
   <div class="header-actions">
-    <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshBtn">
-      🔄 새로고침
-    </button>
+    <button class="btn btn-ghost btn-sm" onclick="refreshAll()" id="refreshBtn">🔄 새로고침</button>
+    <button class="btn btn-primary btn-sm" onclick="openAddModal()">＋ 저장소 추가</button>
   </div>
 </div>
 
-<!-- Main -->
 <div class="main">
-
-  <!-- Stats -->
   <div class="stats" id="stats" style="display:none">
-    <div class="stat-card">
-      <div class="stat-number" id="statTotal">0</div>
-      <div class="stat-label">전체 저장소</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-number" id="statInstalled">0</div>
-      <div class="stat-label">설치됨</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-number" id="statUpdates" style="color:var(--warning)">0</div>
-      <div class="stat-label">업데이트 가능</div>
-    </div>
+    <div class="stat-card"><div class="stat-number" id="statTotal">0</div><div class="stat-label">전체 저장소</div></div>
+    <div class="stat-card"><div class="stat-number" id="statInstalled">0</div><div class="stat-label">설치됨</div></div>
+    <div class="stat-card"><div class="stat-number" id="statUpdates" style="color:var(--warning)">0</div><div class="stat-label">업데이트 가능</div></div>
   </div>
 
-  <!-- Filter bar -->
   <div class="filter-bar" id="filterBar" style="display:none">
     <input type="text" placeholder="저장소 검색..." id="searchInput" oninput="renderRepos()">
     <div class="filter-tabs">
-      <button class="tab-btn active" onclick="setTab('all', this)">전체</button>
-      <button class="tab-btn" onclick="setTab('installed', this)">설치됨</button>
-      <button class="tab-btn" onclick="setTab('updates', this)">업데이트</button>
-      <button class="tab-btn" onclick="setTab('not_installed', this)">미설치</button>
+      <button class="tab-btn active" onclick="setTab('all',this)">전체</button>
+      <button class="tab-btn" onclick="setTab('installed',this)">설치됨</button>
+      <button class="tab-btn" onclick="setTab('updates',this)">업데이트</button>
+      <button class="tab-btn" onclick="setTab('not_installed',this)">미설치</button>
     </div>
   </div>
 
-  <!-- Repo list -->
   <div class="repo-grid" id="repoGrid">
-    <div class="loading">
-      <div class="spinner"></div>
-      <div>저장소 정보 불러오는 중...</div>
+    <div class="loading"><div class="spinner"></div><div>저장소 정보 불러오는 중...</div></div>
+  </div>
+</div>
+
+<!-- 저장소 추가 모달 -->
+<div class="modal-backdrop" id="addModal">
+  <div class="modal">
+    <h2>저장소 추가</h2>
+    <div class="modal-field">
+      <label>GitHub 저장소 *</label>
+      <input id="addRepo" placeholder="owner/repo-name" autocomplete="off">
+      <div class="hint">예: your-org/your-private-integration</div>
+    </div>
+    <div class="modal-field">
+      <label>표시 이름 *</label>
+      <input id="addName" placeholder="My Integration" autocomplete="off">
+    </div>
+    <div class="modal-field">
+      <label>컴포넌트 ID *</label>
+      <input id="addComponentId" placeholder="my_integration" autocomplete="off">
+      <div class="hint">custom_components/ 하위 폴더명 (snake_case)</div>
+    </div>
+    <div class="modal-field">
+      <label>기본 브랜치</label>
+      <input id="addBranch" placeholder="main" value="main" autocomplete="off">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeAddModal()">취소</button>
+      <button class="btn btn-primary" onclick="submitAddRepo()" id="addSubmitBtn">추가</button>
     </div>
   </div>
 </div>
 
-<!-- Toast container -->
-<div class="toast-container" id="toastContainer"></div>
-
-<!-- Confirm modal -->
+<!-- Confirm dialog -->
 <div class="confirm-backdrop" id="confirmBackdrop">
   <div class="confirm-box">
     <h3 id="confirmTitle">확인</h3>
@@ -334,44 +190,35 @@
   </div>
 </div>
 
+<div class="toast-container" id="toastContainer"></div>
+
 <script>
-// ── State ──────────────────────────────────────────────
 let repos = [];
 let activeTab = 'all';
 let busyComponents = new Set();
 let _haToken = '';
 
-// ── Token: receive from parent Web Component via postMessage ───────────
 window.addEventListener('message', (e) => {
-  if (e.data?.type === 'ha_token' && e.data.token) {
-    _haToken = e.data.token;
-  }
+  if (e.data?.type === 'ha_token' && e.data.token) _haToken = e.data.token;
 });
 
-// Also attempt to read from cookie (HA Ingress fallback)
-function _readTokenFromCookie() {
+function _cookieToken() {
   return document.cookie.match(/ingress_token=([^;]+)/)?.[1] || '';
 }
 
-// ── HA WebSocket ───────────────────────────────────────
 let ws = null;
 let msgId = 1;
 const pending = {};
 
 async function connectWS() {
-  // Wait up to 2s for token from postMessage before falling back
   await new Promise(r => setTimeout(r, 300));
-
   return new Promise((resolve, reject) => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}/api/websocket`);
-
-    ws.onopen = () => {};
     ws.onmessage = (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === 'auth_required') {
-        const token = _haToken || _readTokenFromCookie();
-        ws.send(JSON.stringify({ type: 'auth', access_token: token }));
+        ws.send(JSON.stringify({ type: 'auth', access_token: _haToken || _cookieToken() }));
       } else if (msg.type === 'auth_ok') {
         resolve();
       } else if (msg.type === 'auth_invalid') {
@@ -394,101 +241,67 @@ function wsSend(msg) {
 }
 
 async function callService(domain, service, data) {
-  const res = await wsSend({
-    type: 'call_service',
-    domain,
-    service,
-    service_data: data,
-  });
-  return res;
+  return wsSend({ type: 'call_service', domain, service, service_data: data });
 }
 
-async function getStates() {
-  const res = await wsSend({ type: 'get_states' });
-  return res.result || [];
-}
+const UID_PREFIX = 'private_hacs_';
 
-// ── Data loading ───────────────────────────────────────
-// Private HACS entities are identified by unique_id prefix "private_hacs_"
-// which is set in update.py: f"{DOMAIN}_{component_id}"
-const PRIVATE_HACS_UNIQUE_ID_PREFIX = 'private_hacs_';
+async function fetchRepos() {
+  const [statesRes, regRes] = await Promise.all([
+    wsSend({ type: 'get_states' }),
+    wsSend({ type: 'config/entity_registry/list' }),
+  ]);
+  const states = statesRes.result || [];
+  const reg = regRes.result || [];
+
+  const ourIds = new Set(
+    reg
+      .filter(e => e.unique_id?.startsWith(UID_PREFIX) && e.platform === 'private_hacs')
+      .map(e => e.entity_id)
+  );
+
+  return states
+    .filter(s => s.entity_id.startsWith('update.') && ourIds.has(s.entity_id))
+    .map(s => {
+      const a = s.attributes;
+      const componentId = s.entity_id.replace('update.', '').replace(/_update$/, '');
+      const installed = a.installed_version || null;
+      const latest = a.latest_version || null;
+      return {
+        entity_id: s.entity_id,
+        component_id: componentId,
+        name: (a.friendly_name || s.entity_id).replace(/ update$/i, ''),
+        installed_version: installed,
+        latest_version: latest,
+        release_url: a.release_url || null,
+        has_update: !!(installed && latest && installed !== latest),
+        is_installed: !!installed,
+        version_source: a.version_source || (installed ? 'store' : 'none'),
+      };
+    });
+}
 
 async function loadData() {
   try {
-    // Get entity registry to identify only our entities by unique_id
-    const [statesRes, entityRegRes] = await Promise.all([
-      wsSend({ type: 'get_states' }),
-      wsSend({ type: 'config/entity_registry/list' }),
-    ]);
-
-    const states = statesRes.result || [];
-    const entityReg = entityRegRes.result || [];
-
-    // Collect entity_ids that belong to private_hacs (by unique_id prefix)
-    const ourEntityIds = new Set(
-      entityReg
-        .filter(e =>
-          e.unique_id?.startsWith(PRIVATE_HACS_UNIQUE_ID_PREFIX) &&
-          e.platform === 'private_hacs'
-        )
-        .map(e => e.entity_id)
-    );
-
-    const updateEntities = states.filter(s =>
-      s.entity_id.startsWith('update.') && ourEntityIds.has(s.entity_id)
-    );
-
-    repos = buildRepoData(updateEntities);
-    updateStats();
-    renderRepos();
+    repos = await fetchRepos();
+    renderAll();
     document.getElementById('stats').style.display = 'grid';
     document.getElementById('filterBar').style.display = 'flex';
   } catch (err) {
-    showError('데이터 로드 실패: ' + err.message);
+    toast('데이터 로드 실패: ' + err.message, 'error', 8000);
     document.getElementById('repoGrid').innerHTML =
       `<div class="empty"><div class="empty-icon">⚠️</div><p>데이터를 불러오지 못했습니다.<br>${err.message}</p></div>`;
   }
 }
 
-function buildRepoData(states) {
-  return states
-    .filter(s => {
-      const a = s.attributes;
-      return a.installed_version !== undefined || a.latest_version !== undefined;
-    })
-    .map(s => {
-      const a = s.attributes;
-      const entityId = s.entity_id;
-      const componentId = entityId.replace('update.', '').replace(/_update$/, '');
-      const installedVer = a.installed_version || null;
-      const latestVer = a.latest_version || null;
-      const hasUpdate = installedVer && latestVer && installedVer !== latestVer;
-      const isInstalled = !!installedVer;
-      const versionSource = a.version_source || (installedVer ? 'store' : 'none');
+function renderAll() { updateStats(); renderRepos(); }
 
-      return {
-        entity_id: entityId,
-        component_id: componentId,
-        name: (a.friendly_name || entityId).replace(/ update$/i, ''),
-        installed_version: installedVer,
-        latest_version: latestVer,
-        release_url: a.release_url || null,
-        has_update: hasUpdate,
-        is_installed: isInstalled,
-        version_source: versionSource,
-        state: s.state,
-      };
-    });
-}
-
-// ── Stats ──────────────────────────────────────────────
 function updateStats() {
   document.getElementById('statTotal').textContent = repos.length;
   document.getElementById('statInstalled').textContent = repos.filter(r => r.is_installed).length;
   document.getElementById('statUpdates').textContent = repos.filter(r => r.has_update).length;
 }
 
-// ── Tab / filter ───────────────────────────────────────
 function setTab(tab, btn) {
   activeTab = tab;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -497,29 +310,27 @@ function setTab(tab, btn) {
 }
 
 function filteredRepos() {
-  const q = document.getElementById('searchInput')?.value.toLowerCase() || '';
+  const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
   return repos.filter(r => {
-    const matchSearch = !q || r.name.toLowerCase().includes(q) || r.component_id.includes(q);
+    const matchQ = !q || r.name.toLowerCase().includes(q) || r.component_id.includes(q);
     const matchTab =
-      activeTab === 'all' ? true :
       activeTab === 'installed' ? r.is_installed :
       activeTab === 'updates' ? r.has_update :
       activeTab === 'not_installed' ? !r.is_installed : true;
-    return matchSearch && matchTab;
+    return matchQ && matchTab;
   });
 }
 
-// ── Render ─────────────────────────────────────────────
 function renderRepos() {
   const list = filteredRepos();
   const grid = document.getElementById('repoGrid');
-
   if (list.length === 0) {
-    grid.innerHTML = `<div class="empty"><div class="empty-icon">📦</div><p>표시할 저장소가 없습니다.</p></div>`;
+    grid.innerHTML = repos.length === 0
+      ? `<div class="empty"><div class="empty-icon">📦</div><p>등록된 저장소가 없습니다.<br>우상단 <b>＋ 저장소 추가</b> 버튼으로 추가하세요.</p></div>`
+      : `<div class="empty"><div class="empty-icon">🔍</div><p>검색 결과가 없습니다.</p></div>`;
     return;
   }
-
-  grid.innerHTML = list.map(r => repoCardHTML(r)).join('');
+  grid.innerHTML = list.map(repoCardHTML).join('');
 }
 
 function repoCardHTML(r) {
@@ -527,188 +338,50 @@ function repoCardHTML(r) {
   const cardClass = r.has_update ? 'repo-card has-update' : 'repo-card';
 
   const statusBadge = r.is_installed
-    ? (r.has_update
-        ? `<span class="badge badge-update">⬆ 업데이트 가능</span>`
-        : `<span class="badge badge-installed">✓ 최신</span>`)
+    ? (r.has_update ? `<span class="badge badge-update">⬆ 업데이트 가능</span>` : `<span class="badge badge-installed">✓ 최신</span>`)
     : `<span class="badge badge-not-installed">미설치</span>`;
 
-  // Show how the installed version was detected
   const sourceBadge = r.version_source === 'manifest'
-    ? `<span class="badge badge-manifest" title="manifest.json에서 자동 감지됨">📄 자동 감지</span>`
-    : '';
+    ? `<span class="badge badge-manifest" title="manifest.json에서 자동 감지됨">📄 자동 감지</span>` : '';
 
   const installedBadge = r.installed_version
-    ? `<span class="badge badge-version">설치: ${r.installed_version}</span>` : '';
-
+    ? `<span class="badge badge-version">설치: ${esc(r.installed_version)}</span>` : '';
   const latestBadge = r.latest_version
-    ? `<span class="badge badge-version">최신: ${r.latest_version}</span>` : '';
-
+    ? `<span class="badge badge-version">최신: ${esc(r.latest_version)}</span>` : '';
   const releaseLink = r.release_url
-    ? `<a href="${r.release_url}" target="_blank" style="font-size:11px;color:var(--primary);text-decoration:none">릴리즈 노트 ↗</a>` : '';
+    ? `<a href="${esc(r.release_url)}" target="_blank" style="font-size:11px;color:var(--primary);text-decoration:none">릴리즈 노트 ↗</a>` : '';
 
-  // Action buttons
   let actions = '';
   if (busy) {
     actions = `<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>`;
   } else if (!r.is_installed) {
-    actions = `<button class="btn btn-success btn-sm" onclick="install('${r.component_id}', '${r.name}')">⬇ 설치</button>`;
+    actions = `
+      <button class="btn btn-success btn-sm" onclick="install('${esc(r.component_id)}','${esc(r.name)}')">⬇ 설치</button>
+      <button class="btn btn-danger btn-sm" onclick="removeRepo('${esc(r.component_id)}','${esc(r.name)}')">등록 해제</button>`;
   } else if (r.has_update) {
     actions = `
-      <button class="btn btn-warning btn-sm" onclick="install('${r.component_id}', '${r.name}')">⬆ 업데이트</button>
-      <button class="btn btn-danger btn-sm" onclick="uninstall('${r.component_id}', '${r.name}')">삭제</button>
-    `;
+      <button class="btn btn-warning btn-sm" onclick="install('${esc(r.component_id)}','${esc(r.name)}')">⬆ 업데이트</button>
+      <button class="btn btn-danger btn-sm" onclick="uninstall('${esc(r.component_id)}','${esc(r.name)}')">삭제</button>`;
   } else {
     actions = `
-      <button class="btn btn-ghost btn-sm" onclick="install('${r.component_id}', '${r.name}')">🔄 재설치</button>
-      <button class="btn btn-danger btn-sm" onclick="uninstall('${r.component_id}', '${r.name}')">삭제</button>
-    `;
+      <button class="btn btn-ghost btn-sm" onclick="install('${esc(r.component_id)}','${esc(r.name)}')">🔄 재설치</button>
+      <button class="btn btn-danger btn-sm" onclick="uninstall('${esc(r.component_id)}','${esc(r.name)}')">삭제</button>`;
   }
 
   return `
     <div class="${cardClass}" id="card-${r.component_id}">
       <div class="repo-icon">🧩</div>
       <div class="repo-info">
-        <div class="repo-name">${escHtml(r.name)}</div>
-        <div class="repo-repo">${r.component_id}</div>
-        <div class="repo-meta">
-          ${statusBadge}
-          ${sourceBadge}
-          ${installedBadge}
-          ${latestBadge}
-          ${releaseLink}
-        </div>
+        <div class="repo-name">${esc(r.name)}</div>
+        <div class="repo-repo">${esc(r.component_id)}</div>
+        <div class="repo-meta">${statusBadge}${sourceBadge}${installedBadge}${latestBadge}${releaseLink}</div>
       </div>
       <div class="repo-actions">${actions}</div>
-    </div>
-  `;
+    </div>`;
 }
 
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ── Actions ────────────────────────────────────────────
-async function install(componentId, name) {
-  busyComponents.add(componentId);
-  renderRepos();
-  toast(`${name} 설치/업데이트 중...`, 'info');
-
-  try {
-    await callService('private_hacs', 'install', { component_id: componentId });
-    toast(`${name} 설치 완료! HA를 재시작해야 적용됩니다.`, 'success', 6000);
-    await reloadData();
-  } catch (err) {
-    toast(`설치 실패: ${err.message}`, 'error', 6000);
-  } finally {
-    busyComponents.delete(componentId);
-    renderRepos();
-  }
-}
-
-async function uninstall(componentId, name) {
-  showConfirm(
-    '삭제 확인',
-    `${name}을(를) 삭제하시겠습니까?\n삭제 후 HA를 재시작해야 완전히 제거됩니다.`,
-    async () => {
-      busyComponents.add(componentId);
-      renderRepos();
-      toast(`${name} 삭제 중...`, 'info');
-
-      try {
-        await callService('private_hacs', 'uninstall', { component_id: componentId });
-        toast(`${name} 삭제 완료. HA를 재시작하세요.`, 'success', 6000);
-        await reloadData();
-      } catch (err) {
-        toast(`삭제 실패: ${err.message}`, 'error', 6000);
-      } finally {
-        busyComponents.delete(componentId);
-        renderRepos();
-      }
-    }
-  );
-}
-
-async function refreshAll() {
-  const btn = document.getElementById('refreshBtn');
-  btn.disabled = true;
-  btn.textContent = '⏳ 새로고침 중...';
-  toast('버전 정보 새로고침 중...', 'info');
-
-  try {
-    await callService('private_hacs', 'refresh', {});
-    await new Promise(r => setTimeout(r, 2000)); // wait for coordinator
-    await reloadData();
-    toast('새로고침 완료', 'success');
-  } catch (err) {
-    toast('새로고침 실패: ' + err.message, 'error');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = '🔄 새로고침';
-  }
-}
-
-async function reloadData() {
-  const [statesRes, entityRegRes] = await Promise.all([
-    wsSend({ type: 'get_states' }),
-    wsSend({ type: 'config/entity_registry/list' }),
-  ]);
-  const states = statesRes.result || [];
-  const entityReg = entityRegRes.result || [];
-  const ourEntityIds = new Set(
-    entityReg
-      .filter(e =>
-        e.unique_id?.startsWith(PRIVATE_HACS_UNIQUE_ID_PREFIX) &&
-        e.platform === 'private_hacs'
-      )
-      .map(e => e.entity_id)
-  );
-  const updateEntities = states.filter(s =>
-    s.entity_id.startsWith('update.') && ourEntityIds.has(s.entity_id)
-  );
-  repos = buildRepoData(updateEntities);
-  updateStats();
-  renderRepos();
-}
-
-// ── Toast ──────────────────────────────────────────────
-function toast(msg, type = 'info', duration = 3500) {
-  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
-  const el = document.createElement('div');
-  el.className = `toast ${type}`;
-  el.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>`;
-  document.getElementById('toastContainer').appendChild(el);
-  setTimeout(() => el.remove(), duration);
-}
-
-function showError(msg) { toast(msg, 'error', 8000); }
-
-// ── Confirm dialog ─────────────────────────────────────
-let confirmCallback = null;
-
-function showConfirm(title, msg, cb) {
-  document.getElementById('confirmTitle').textContent = title;
-  document.getElementById('confirmMsg').textContent = msg;
-  confirmCallback = cb;
-  document.getElementById('confirmOkBtn').onclick = () => { closeConfirm(); cb(); };
-  document.getElementById('confirmBackdrop').classList.add('open');
-}
-
-function closeConfirm() {
-  document.getElementById('confirmBackdrop').classList.remove('open');
-  confirmCallback = null;
-}
-
-// ── Bootstrap ──────────────────────────────────────────
-(async () => {
-  try {
-    await connectWS();
-    await loadData();
-  } catch (err) {
-    showError('WebSocket 연결 실패: ' + err.message);
-    document.getElementById('repoGrid').innerHTML =
-      `<div class="empty"><div class="empty-icon">🔌</div><p>Home Assistant 연결에 실패했습니다.<br>페이지를 새로고침 해보세요.</p></div>`;
-  }
-})();
-</script>
-</body>
-</html>
+a
