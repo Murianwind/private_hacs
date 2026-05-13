@@ -19,21 +19,29 @@ _PANEL_JS = """customElements.define('private-hacs-panel', class extends HTMLEle
     if (this.shadowRoot) return;
     const shadow = this.attachShadow({ mode: 'open' });
     const iframe = document.createElement('iframe');
-    iframe.src = '/private_hacs_panel/panel.html';
     iframe.style.cssText = 'width:100%;height:100%;border:none;display:block;';
     shadow.appendChild(iframe);
 
-    iframe.addEventListener('load', () => {
-      try {
-        const token =
-          window.hassConnection?.auth?.data?.access_token ||
-          document.cookie.match(/ingress_token=([^;]+)/)?.[1] || '';
-        iframe.contentWindow.postMessage({ type: 'ha_token', token }, '*');
-      } catch(_) {}
-    });
+    // hass 객체가 set될 때까지 대기 후 토큰을 URL 파라미터로 전달
+    this._iframe = iframe;
+    if (this._hass) {
+      this._loadWithToken(this._hass);
+    }
   }
 
-  set hass(_) {}
+  set hass(hass) {
+    this._hass = hass;
+    if (this._iframe && !this._loaded) {
+      this._loadWithToken(hass);
+    }
+  }
+
+  _loadWithToken(hass) {
+    const token = hass?.auth?.data?.access_token || '';
+    if (!token) return;
+    this._loaded = true;
+    this._iframe.src = '/private_hacs_panel/panel.html?token=' + encodeURIComponent(token);
+  }
 });"""
 
 
@@ -59,7 +67,6 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     js_dir = os.path.join(panel_dir, "js")
     os.makedirs(js_dir, exist_ok=True)
 
-    # open()은 blocking이므로 executor에서 실행
     await hass.async_add_executor_job(
         _write_panel_js_sync, os.path.join(js_dir, "panel.js")
     )
