@@ -169,6 +169,7 @@
   .badge-not-installed { background: var(--surface3); color: var(--text-secondary); }
   .badge-version { background: var(--surface3); color: var(--text-secondary); font-family: monospace; }
   .badge-type { background: rgba(3,169,244,.15); color: var(--primary); }
+  .badge-manifest { background: rgba(124,77,255,.2); color: #b39ddb; }
 
   .repo-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 
@@ -424,29 +425,29 @@ function buildRepoData(states) {
   return states
     .filter(s => {
       const a = s.attributes;
-      // Only show Private HACS entities (they have our device association)
       return a.installed_version !== undefined || a.latest_version !== undefined;
     })
     .map(s => {
       const a = s.attributes;
       const entityId = s.entity_id;
-      // component_id from entity: update.apexcharts_card_update → apexcharts_card
       const componentId = entityId.replace('update.', '').replace(/_update$/, '');
       const installedVer = a.installed_version || null;
       const latestVer = a.latest_version || null;
       const hasUpdate = installedVer && latestVer && installedVer !== latestVer;
       const isInstalled = !!installedVer;
+      const versionSource = a.version_source || (installedVer ? 'store' : 'none');
 
       return {
         entity_id: entityId,
         component_id: componentId,
-        name: (a.friendly_name || entityId).replace(' update', '').replace(' Update', ''),
+        name: (a.friendly_name || entityId).replace(/ update$/i, ''),
         installed_version: installedVer,
         latest_version: latestVer,
         release_url: a.release_url || null,
         has_update: hasUpdate,
         is_installed: isInstalled,
-        state: s.state,  // "on" = update available, "off" = up to date
+        version_source: versionSource,
+        state: s.state,
       };
     });
 }
@@ -502,6 +503,11 @@ function repoCardHTML(r) {
         : `<span class="badge badge-installed">✓ 최신</span>`)
     : `<span class="badge badge-not-installed">미설치</span>`;
 
+  // Show how the installed version was detected
+  const sourceBadge = r.version_source === 'manifest'
+    ? `<span class="badge badge-manifest" title="manifest.json에서 자동 감지됨">📄 자동 감지</span>`
+    : '';
+
   const installedBadge = r.installed_version
     ? `<span class="badge badge-version">설치: ${r.installed_version}</span>` : '';
 
@@ -537,6 +543,7 @@ function repoCardHTML(r) {
         <div class="repo-repo">${r.component_id}</div>
         <div class="repo-meta">
           ${statusBadge}
+          ${sourceBadge}
           ${installedBadge}
           ${latestBadge}
           ${releaseLink}

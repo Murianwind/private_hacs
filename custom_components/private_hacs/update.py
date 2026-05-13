@@ -97,6 +97,13 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
     def update_percentage(self) -> int | None:
         return None
 
+    @property
+    def extra_state_attributes(self) -> dict:
+        """Expose version_source so the panel UI can show auto-detected badge."""
+        return {
+            "version_source": self._repo_data.get("version_source", "none"),
+        }
+
     async def async_release_notes(self) -> str | None:
         return self.release_summary
 
