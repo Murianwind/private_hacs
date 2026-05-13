@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time  # 추가: 캐시 방지를 위해 시간 모듈 임포트
 
 from homeassistant.components.frontend import async_remove_panel as frontend_remove_panel
 from homeassistant.components.http import StaticPathConfig
@@ -35,7 +36,8 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
 
   async _loadHTML() {
     try {
-      const resp = await fetch('/private_hacs_panel/panel.html');
+      // 수정: 캐시를 무시하고 항상 최신 html 파일을 가져오도록 Date.now() 파라미터 추가
+      const resp = await fetch('/private_hacs_panel/panel.html?t=' + Date.now());
       if (!resp.ok) throw new Error('panel.html fetch failed: ' + resp.status);
       const html = await resp.text();
 
@@ -69,6 +71,9 @@ customElements.define('private-hacs-panel', class extends HTMLElement {
         div.innerHTML = bodyMatch[1].replace(/<script[\\s\\S]*?<\\/script>/gi, '');
         this.appendChild(div);
       }
+
+      // 수정: panel.html의 스크립트가 Shadow DOM 내의 요소를 찾을 수 있도록 패널을 전역으로 노출
+      window.__privateHacsPanel = this;
 
       // script 태그를 추출해서 document.head에 추가 (window 컨텍스트 실행)
       const scriptRe = /<script[^>]*>([\\s\\S]*?)<\\/script>/gi;
@@ -132,7 +137,8 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
         frontend_url_path=PANEL_URL,
-        js_url="/private_hacs_panel/js/panel.js",
+        # 수정: HA 시작 시마다 js URL을 새롭게 생성하여 브라우저의 강제 캐시를 무력화
+        js_url=f"/private_hacs_panel/js/panel.js?t={int(time.time())}",
         require_admin=True,
     )
 
