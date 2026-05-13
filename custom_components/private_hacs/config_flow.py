@@ -39,7 +39,7 @@ class PrivateHacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     title="Private HACS",
                     data={
                         CONF_GITHUB_TOKEN: token or None,
-                        CONF_REPOS: [],          # 저장소는 패널에서 추가
+                        CONF_REPOS: [],  # 저장소는 패널에서 추가
                     },
                 )
 
@@ -62,7 +62,7 @@ class PrivateHacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class PrivateHacsOptionsFlow(config_entries.OptionsFlow):
-    """Options flow: token 변경만 담당. 저장소 관리는 패널에서."""
+    """Options flow: 토큰 변경만. 저장소 관리는 패널에서."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
