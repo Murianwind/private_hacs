@@ -156,7 +156,6 @@
   </div>
 </div>
 
-<!-- 저장소 추가 모달 -->
 <div class="modal-backdrop" id="addModal">
   <div class="modal">
     <h2>저장소 추가</h2>
@@ -164,7 +163,6 @@
       <label>GitHub 저장소 *</label>
       <input id="addRepo" placeholder="owner/repo-name" autocomplete="off">
       <div class="hint">예: your-org/your-private-integration</div>
-      <!-- GitHub API로 저장소 정보 조회 후 미리보기 -->
       <div class="repo-preview" id="repoPreview">
         <div class="repo-preview-name" id="previewName"></div>
         <div class="repo-preview-desc" id="previewDesc"></div>
@@ -182,7 +180,6 @@
   </div>
 </div>
 
-<!-- Confirm dialog -->
 <div class="confirm-backdrop" id="confirmBackdrop">
   <div class="confirm-box">
     <h3 id="confirmTitle">확인</h3>
@@ -197,11 +194,16 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
+// ⭐ 수정됨: 전역 변수 중복 선언 오류 방지를 위해 let/const를 var로 변경
 // ── State ──────────────────────────────────────────────────────────────────
-let repos = [];
-let activeTab = 'all';
-let busyComponents = new Set();
-let _pendingRepoInfo = null; // 저장소 추가 모달에서 조회한 정보
+var repos = [];
+var activeTab = 'all';
+var busyComponents = new Set();
+var _pendingRepoInfo = null; // 저장소 추가 모달에서 조회한 정보
+
+// ⭐ 수정됨: DOM 탐색 헬퍼 (Shadow DOM 내부 조회용)
+var _root = function() { return window.__privateHacsPanel || document; };
+var $el = function(id) { return _root().querySelector('#' + id); };
 
 async function getToken() {
   if (typeof window.__privateHacsGetToken === 'function') {
@@ -211,9 +213,9 @@ async function getToken() {
 }
 
 // ── WebSocket ──────────────────────────────────────────────────────────────
-let ws = null;
-let msgId = 1;
-const pending = {};
+var ws = null;
+var msgId = 1;
+var pending = {};
 
 async function connectWS() {
   const token = await getToken();
@@ -250,7 +252,7 @@ async function callService(domain, service, data) {
 }
 
 // ── Data ───────────────────────────────────────────────────────────────────
-const UID_PREFIX = 'private_hacs_';
+var UID_PREFIX = 'private_hacs_';
 
 async function fetchRepos() {
   const [statesRes, regRes] = await Promise.all([
@@ -292,12 +294,12 @@ async function loadData() {
     repos = await fetchRepos();
   } catch (err) {
     toast('데이터 로드 실패: ' + err.message, 'error', 8000);
-    document.getElementById('repoGrid').innerHTML =
+    $el('repoGrid').innerHTML =
       `<div class="empty"><div class="empty-icon">⚠️</div><p>데이터를 불러오지 못했습니다.<br>${err.message}</p></div>`;
     return;
   }
-  document.getElementById('stats').style.display = 'grid';
-  document.getElementById('filterBar').style.display = 'flex';
+  $el('stats').style.display = 'grid';
+  $el('filterBar').style.display = 'flex';
   renderAll();
 }
 
@@ -305,20 +307,20 @@ function renderAll() { updateStats(); renderRepos(); }
 
 // ── Stats / filter ─────────────────────────────────────────────────────────
 function updateStats() {
-  document.getElementById('statTotal').textContent = repos.length;
-  document.getElementById('statInstalled').textContent = repos.filter(r => r.is_installed).length;
-  document.getElementById('statUpdates').textContent = repos.filter(r => r.has_update).length;
+  $el('statTotal').textContent = repos.length;
+  $el('statInstalled').textContent = repos.filter(r => r.is_installed).length;
+  $el('statUpdates').textContent = repos.filter(r => r.has_update).length;
 }
 
 function setTab(tab, btn) {
   activeTab = tab;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  _root().querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderRepos();
 }
 
 function filteredRepos() {
-  const q = (document.getElementById('searchInput')?.value || '').toLowerCase();
+  const q = ($el('searchInput')?.value || '').toLowerCase();
   return repos.filter(r => {
     const matchQ = !q || r.name.toLowerCase().includes(q) || r.component_id.includes(q);
     const matchTab =
@@ -332,7 +334,7 @@ function filteredRepos() {
 // ── Render ─────────────────────────────────────────────────────────────────
 function renderRepos() {
   const list = filteredRepos();
-  const grid = document.getElementById('repoGrid');
+  const grid = $el('repoGrid');
   if (list.length === 0) {
     grid.innerHTML = repos.length === 0
       ? `<div class="empty"><div class="empty-icon">📦</div><p>등록된 저장소가 없습니다.<br>우상단 <b>＋ 저장소 추가</b> 버튼으로 추가하세요.</p></div>`
@@ -443,7 +445,7 @@ async function removeRepo(componentId, name) {
 }
 
 async function refreshAll() {
-  const btn = document.getElementById('refreshBtn');
+  const btn = $el('refreshBtn');
   btn.disabled = true; btn.textContent = '⏳ 새로고침 중...';
   toast('버전 정보 새로고침 중...', 'info');
   try {
@@ -460,27 +462,28 @@ async function refreshAll() {
 
 // ── Add repo modal ─────────────────────────────────────────────────────────
 // GitHub API로 저장소 조회 — custom_components 하위 폴더명 자동 감지
-let _repoLookupTimer = null;
+var _repoLookupTimer = null;
 
 function openAddModal() {
   _pendingRepoInfo = null;
-  document.getElementById('addRepo').value = '';
-  document.getElementById('addBranch').value = 'main';
-  document.getElementById('repoPreview').classList.remove('visible');
-  document.getElementById('addSubmitBtn').disabled = true;
-  document.getElementById('addModal').classList.add('open');
-  setTimeout(() => document.getElementById('addRepo').focus(), 50);
+  $el('addRepo').value = '';
+  $el('addBranch').value = 'main';
+  $el('repoPreview').classList.remove('visible');
+  $el('addSubmitBtn').disabled = true;
+  $el('addModal').classList.add('open');
+  setTimeout(() => { const el = $el('addRepo'); if (el) el.focus(); }, 50);
 }
 
 function closeAddModal() {
-  document.getElementById('addModal').classList.remove('open');
+  $el('addModal').classList.remove('open');
   _pendingRepoInfo = null;
 }
 
-document.getElementById('addRepo').addEventListener('input', (e) => {
+// ⭐ 수정됨: 이벤트 리스너 중복 등록을 막기 위해 oninput 핸들러로 변경
+$el('addRepo').oninput = (e) => {
   const val = e.target.value.trim();
-  document.getElementById('repoPreview').classList.remove('visible');
-  document.getElementById('addSubmitBtn').disabled = true;
+  $el('repoPreview').classList.remove('visible');
+  $el('addSubmitBtn').disabled = true;
   _pendingRepoInfo = null;
 
   clearTimeout(_repoLookupTimer);
@@ -488,15 +491,15 @@ document.getElementById('addRepo').addEventListener('input', (e) => {
 
   // 입력 멈춘 후 800ms 뒤 GitHub API 조회
   _repoLookupTimer = setTimeout(() => lookupRepo(val), 800);
-});
+};
 
 async function lookupRepo(repo) {
-  const preview = document.getElementById('repoPreview');
+  const preview = $el('repoPreview');
   preview.classList.add('visible');
-  document.getElementById('previewName').textContent = '조회 중...';
-  document.getElementById('previewDesc').textContent = '';
-  document.getElementById('previewComponent').textContent = '';
-  document.getElementById('addSubmitBtn').disabled = true;
+  $el('previewName').textContent = '조회 중...';
+  $el('previewDesc').textContent = '';
+  $el('previewComponent').textContent = '';
+  $el('addSubmitBtn').disabled = true;
   _pendingRepoInfo = null;
 
   try {
@@ -526,18 +529,18 @@ async function lookupRepo(repo) {
       branch: info.default_branch || 'main',
     };
 
-    document.getElementById('previewName').textContent = info.full_name || repo;
-    document.getElementById('previewDesc').textContent = info.description || '';
-    document.getElementById('previewComponent').textContent =
+    $el('previewName').textContent = info.full_name || repo;
+    $el('previewDesc').textContent = info.description || '';
+    $el('previewComponent').textContent =
       componentIds.length > 1
         ? `component_id: ${componentId} (${componentIds.join(', ')} 중 첫 번째)`
         : `component_id: ${componentId}`;
-    document.getElementById('addSubmitBtn').disabled = false;
+    $el('addSubmitBtn').disabled = false;
 
   } catch (err) {
-    document.getElementById('previewName').textContent = '조회 실패: ' + err.message;
-    document.getElementById('previewDesc').textContent = '';
-    document.getElementById('previewComponent').textContent = '';
+    $el('previewName').textContent = '조회 실패: ' + err.message;
+    $el('previewDesc').textContent = '';
+    $el('previewComponent').textContent = '';
   }
 }
 
@@ -546,10 +549,10 @@ async function submitAddRepo() {
     toast('저장소 주소를 입력하고 잠시 기다려주세요.', 'warning'); return;
   }
 
-  const branch = document.getElementById('addBranch').value.trim() || _pendingRepoInfo.branch;
+  const branch = $el('addBranch').value.trim() || _pendingRepoInfo.branch;
   const { repo, name, component_id } = _pendingRepoInfo;
 
-  const btn = document.getElementById('addSubmitBtn');
+  const btn = $el('addSubmitBtn');
   btn.disabled = true; btn.textContent = '추가 중...';
   try {
     await callService('private_hacs', 'add_repo', {
@@ -567,12 +570,12 @@ async function submitAddRepo() {
 
 // ── Confirm dialog ─────────────────────────────────────────────────────────
 function showConfirm(title, msg, cb) {
-  document.getElementById('confirmTitle').textContent = title;
-  document.getElementById('confirmMsg').textContent = msg;
-  document.getElementById('confirmOkBtn').onclick = () => { closeConfirm(); cb(); };
-  document.getElementById('confirmBackdrop').classList.add('open');
+  $el('confirmTitle').textContent = title;
+  $el('confirmMsg').textContent = msg;
+  $el('confirmOkBtn').onclick = () => { closeConfirm(); cb(); };
+  $el('confirmBackdrop').classList.add('open');
 }
-function closeConfirm() { document.getElementById('confirmBackdrop').classList.remove('open'); }
+function closeConfirm() { $el('confirmBackdrop').classList.remove('open'); }
 
 // ── Toast ──────────────────────────────────────────────────────────────────
 function toast(msg, type = 'info', duration = 3500) {
@@ -580,14 +583,21 @@ function toast(msg, type = 'info', duration = 3500) {
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>`;
-  document.getElementById('toastContainer').appendChild(el);
+  $el('toastContainer').appendChild(el);
   setTimeout(() => el.remove(), duration);
 }
 
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { closeAddModal(); closeConfirm(); }
-});
+// ⭐ 수정됨: 이벤트 리스너 중복 등록 방지
+if (!window._privateHacsKeydown) {
+  window._privateHacsKeydown = true;
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { 
+      if (typeof closeAddModal === 'function') closeAddModal(); 
+      if (typeof closeConfirm === 'function') closeConfirm(); 
+    }
+  });
+}
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 (async () => {
@@ -595,7 +605,7 @@ document.addEventListener('keydown', (e) => {
     await connectWS();
     await loadData();
   } catch (err) {
-    document.getElementById('repoGrid').innerHTML =
+    $el('repoGrid').innerHTML =
       `<div class="empty"><div class="empty-icon">🔌</div>
        <p>${err.message}<br>
        <button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="location.reload()">새로고침</button></p></div>`;
