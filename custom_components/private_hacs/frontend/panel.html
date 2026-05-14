@@ -66,7 +66,6 @@
   .repo-icon { width: 48px; height: 48px; flex-shrink: 0; background: linear-gradient(135deg, var(--primary), #7c4dff); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; }
   .repo-info { flex: 1; min-width: 0; }
   
-  /* 저장소 이름 클릭 효과 추가 */
   .repo-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; display: inline-block; cursor: pointer; color: var(--text); transition: color .15s; text-decoration: underline; text-decoration-color: transparent; }
   .repo-name:hover { color: var(--primary); text-decoration-color: var(--primary); }
   
@@ -112,7 +111,6 @@
     flex-direction: column;
   }
   
-  /* README 전용 모달 스타일 */
   #readmeModal .modal {
     max-width: 800px;
     width: 95%;
@@ -333,7 +331,6 @@ async function fetchRepos() {
   const states = results[0].result || [];
   const reg = results[1].result || [];
 
-  // registry에서 unique_id 역추적 - private_hacs_ 접두사가 있건 없건 컴포넌트 아이디를 깔끔하게 추출합니다.
   const entityToComponentId = {};
   reg
     .filter(function(e) { return e.platform === 'private_hacs'; })
@@ -358,7 +355,6 @@ async function fetchRepos() {
       
       const rawName = a.friendly_name || s.entity_id;
       
-      // 'Private HACS ' 나 ' update' 같은 쓸데없는 이름들을 강제로 모두 제거
       let cleanName = rawName.replace(/ update$/i, '');
       if (cleanName.indexOf('Private HACS ') === 0) {
           cleanName = cleanName.substring('Private HACS '.length);
@@ -366,8 +362,8 @@ async function fetchRepos() {
 
       let repoUrl = '';
       if (a.release_url) {
-        const match = a.release_url.match(/github\\.com\\/([^\\/]+\\/[^\\/]+)/);
-        if (match) repoUrl = match[1].replace(/\\/(tree|releases|commits).*$/, '');
+        const match = a.release_url.match(/github\.com\/([^\/]+\/[^\/]+)/);
+        if (match) repoUrl = match[1].replace(/\/(tree|releases|commits).*$/, '');
       }
       
       return {
@@ -464,24 +460,24 @@ function repoCardHTML(r) {
     actions = '<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>';
   } else if (!r.is_installed) {
     actions = [
-      '<button class="btn btn-success btn-sm" onclick="install(\\'' + esc(r.component_id) + '\\',\\'\\' + esc(r.name) + '\\')">⬇ 설치</button>',
-      '<button class="btn btn-danger btn-sm" onclick="removeRepo(\\'' + esc(r.component_id) + '\\',\\'\\' + esc(r.name) + '\\')">등록 해제</button>',
+      '<button class="btn btn-success btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">⬇ 설치</button>',
+      '<button class="btn btn-danger btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">등록 해제</button>',
     ].join('');
   } else if (r.has_update) {
     actions = [
-      '<button class="btn btn-warning btn-sm" onclick="install(\\'' + esc(r.component_id) + '\\',\\'\\' + esc(r.name) + '\\')">⬆ 업데이트</button>',
-      '<button class="btn btn-danger btn-sm" onclick="uninstall(\\'' + esc(r.component_id) + '\\',\\'\\' + esc(r.name) + '\\')">컴포넌트 삭제</button>',
-      '<button class="btn btn-ghost btn-sm" onclick="removeRepo(\\'' + esc(r.component_id) + '\\',\\'\\' + esc(r.name) + '\\')">등록 해제</button>',
+      '<button class="btn btn-warning btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">⬆ 업데이트</button>',
+      '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>',
+      '<button class="btn btn-ghost btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">등록 해제</button>',
     ].join('');
   } else {
     actions = [
-      '<button class="btn btn-ghost btn-sm" onclick="install(\\'' + esc(r.component_id) + '\\',\\'\\' + esc(r.name) + '\\')">🔄 재설치</button>',
-      '<button class="btn btn-danger btn-sm" onclick="uninstall(\\'' + esc(r.component_id) + '\\',\\'\\' + esc(r.name) + '\\')">컴포넌트 삭제</button>',
-      '<button class="btn btn-ghost btn-sm" onclick="removeRepo(\\'' + esc(r.component_id) + '\\',\\'\\' + esc(r.name) + '\\')">등록 해제</button>',
+      '<button class="btn btn-ghost btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">🔄 재설치</button>',
+      '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>',
+      '<button class="btn btn-ghost btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">등록 해제</button>',
     ].join('');
   }
 
-  const clickHandler = r.repo_url ? 'onclick="openReadmeModal(\\'' + esc(r.repo_url) + '\\', \\'' + esc(r.name) + '\\')"' : '';
+  const clickHandler = r.repo_url ? 'onclick="openReadmeModal(\'' + esc(r.repo_url) + '\', \'' + esc(r.name) + '\')"' : '';
 
   return '<div class="' + cardClass + '" id="card-' + r.component_id + '">'
     + '<div class="repo-icon" ' + clickHandler + '>🧩</div>'
@@ -513,7 +509,7 @@ async function install(componentId, name) {
 
 async function uninstall(componentId, name) {
   showConfirm('컴포넌트 삭제',
-    name + ' 컴포넌트를 삭제하시겠습니까?\\n\\n저장소 등록은 유지됩니다.\\n삭제 후 HA를 재시작해야 완전히 제거됩니다.',
+    name + ' 컴포넌트를 삭제하시겠습니까?\n\n저장소 등록은 유지됩니다.\n삭제 후 HA를 재시작해야 완전히 제거됩니다.',
     async function() {
       busyComponents.add(componentId); renderRepos();
       toast(name + ' 컴포넌트 삭제 중...', 'info');
@@ -532,7 +528,7 @@ async function uninstall(componentId, name) {
 // 등록 해제 시 서비스 호출 후 즉시 UI에서 지워지도록 변경
 async function removeRepo(componentId, name) {
   showConfirm('저장소 등록 해제',
-    name + '을(를) Private HACS에서 제거하시겠습니까?\\n\\n설치된 파일은 자동으로 삭제되지 않습니다.\\n나중에 다시 등록하면 기존 설치 정보가 복원됩니다.',
+    name + '을(를) Private HACS에서 제거하시겠습니까?\n\n설치된 파일은 자동으로 삭제되지 않습니다.\n나중에 다시 등록하면 기존 설치 정보가 복원됩니다.',
     async function() {
       toast(name + ' 등록 해제 중...', 'info');
       try {
@@ -600,9 +596,9 @@ function closeReadmeModal() {
 
 function _parseRepoInput(val) {
   val = val.trim();
-  const urlMatch = val.match(/github\\.com\\/([a-zA-Z0-9_\\-]+\\/[a-zA-Z0-9_\\-\\.]+)/);
-  if (urlMatch) return urlMatch[1].replace(/\\.git$/, '');
-  if (/^[a-zA-Z0-9_\\-]+\\/[a-zA-Z0-9_\\-\\.]+$/.test(val)) return val;
+  const urlMatch = val.match(/github\.com\/([a-zA-Z0-9_\-]+\/[a-zA-Z0-9_\-\.]+)/);
+  if (urlMatch) return urlMatch[1].replace(/\.git$/, '');
+  if (/^[a-zA-Z0-9_\-]+\/[a-zA-Z0-9_\-\.]+$/.test(val)) return val;
   return null;
 }
 
