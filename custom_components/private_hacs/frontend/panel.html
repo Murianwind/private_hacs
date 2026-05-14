@@ -284,17 +284,19 @@ async function fetchRepos() {
   const states = results[0].result || [];
   const reg = results[1].result || [];
 
-  const ourIds = new Set(
-    reg
-      .filter(function(e) { return e.unique_id && e.unique_id.indexOf(UID_PREFIX) === 0 && e.platform === 'private_hacs'; })
-      .map(function(e) { return e.entity_id; })
-  );
+  // registry에서 unique_id를 역추적하여 정확한 component_id 매핑
+  const entityToComponentId = {};
+  reg
+    .filter(function(e) { return e.unique_id && e.unique_id.indexOf(UID_PREFIX) === 0 && e.platform === 'private_hacs'; })
+    .forEach(function(e) { 
+        entityToComponentId[e.entity_id] = e.unique_id.substring(UID_PREFIX.length);
+    });
 
   return states
-    .filter(function(s) { return s.entity_id.indexOf('update.') === 0 && ourIds.has(s.entity_id); })
+    .filter(function(s) { return s.entity_id.indexOf('update.') === 0 && entityToComponentId[s.entity_id]; })
     .map(function(s) {
       const a = s.attributes;
-      const componentId = s.entity_id.replace('update.', '').replace(/_update$/, '');
+      const componentId = entityToComponentId[s.entity_id];
       const installed = a.installed_version || null;
       const latest = a.latest_version || null;
       // HA update 엔티티: state='on' 이면 업데이트 있음
