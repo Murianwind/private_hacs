@@ -8,6 +8,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import callback
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import CONF_GITHUB_TOKEN, CONF_REPOS, DOMAIN
 from .github import GitHubClient
@@ -27,28 +28,26 @@ class PrivateHacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             token = user_input.get(CONF_GITHUB_TOKEN, "").strip()
 
             if token:
-                client = GitHubClient(token)
+                session = async_get_clientsession(self.hass)
+                client = GitHubClient(token=token, session=session)
                 if not await client.validate_token():
                     errors[CONF_GITHUB_TOKEN] = "invalid_token"
 
             if not errors:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_configured()
-
                 return self.async_create_entry(
                     title="Private HACS",
                     data={
                         CONF_GITHUB_TOKEN: token or None,
-                        CONF_REPOS: [],  # 저장소는 패널에서 추가
+                        CONF_REPOS: [],
                     },
                 )
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_GITHUB_TOKEN, default=""): str,
-                }
+                {vol.Optional(CONF_GITHUB_TOKEN, default=""): str}
             ),
             errors=errors,
         )
@@ -62,8 +61,6 @@ class PrivateHacsConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class PrivateHacsOptionsFlow(config_entries.OptionsFlow):
-    """Options flow: 토큰 변경만. 저장소 관리는 패널에서."""
-
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self._entry = config_entry
 
@@ -77,26 +74,22 @@ class PrivateHacsOptionsFlow(config_entries.OptionsFlow):
             token = user_input.get(CONF_GITHUB_TOKEN, "").strip()
 
             if token:
-                client = GitHubClient(token)
+                session = async_get_clientsession(self.hass)
+                client = GitHubClient(token=token, session=session)
                 if not await client.validate_token():
                     errors[CONF_GITHUB_TOKEN] = "invalid_token"
 
             if not errors:
                 self.hass.config_entries.async_update_entry(
                     self._entry,
-                    data={
-                        **self._entry.data,
-                        CONF_GITHUB_TOKEN: token or None,
-                    },
+                    data={**self._entry.data, CONF_GITHUB_TOKEN: token or None},
                 )
                 return self.async_create_entry(title="", data={})
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
-                {
-                    vol.Optional(CONF_GITHUB_TOKEN, default=current_token): str,
-                }
+                {vol.Optional(CONF_GITHUB_TOKEN, default=current_token): str}
             ),
             errors=errors,
         )
