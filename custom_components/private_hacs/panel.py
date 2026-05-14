@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-import aiohttp  # 자동 다운로드를 위해 필요
+import aiohttp
 
 from homeassistant.components.frontend import async_remove_panel as frontend_remove_panel
 from homeassistant.components.http import StaticPathConfig
@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _REGISTERED_HASS_IDS: set[int] = set()
 
-# panel.js 내용 (수정 사항 없음)
+# 외부 파일(src)도 정상적으로 로드하도록 수정된 panel.js
 _PANEL_JS = r"""
 if (!customElements.get('private-hacs-panel')) {
   customElements.define('private-hacs-panel', class extends HTMLElement {
@@ -65,11 +65,18 @@ if (!customElements.get('private-hacs-panel')) {
         window.__privateHacsPanel = this;
         if (!window.__privateHacsScriptLoaded) {
           window.__privateHacsScriptLoaded = true;
-          const scriptRe = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+          const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
           let m;
           while ((m = scriptRe.exec(html)) !== null) {
+            const attrs = m[1];
+            const content = m[2];
             const script = document.createElement('script');
-            script.textContent = m[1];
+            const srcMatch = attrs.match(/src=["']([^"']+)["']/);
+            if (srcMatch) {
+              script.src = srcMatch[1];
+            } else {
+              script.textContent = content;
+            }
             document.head.appendChild(script);
           }
         } else {
@@ -88,14 +95,10 @@ if (!customElements.get('private-hacs-panel')) {
 """
 
 async def _async_ensure_marked_js(hass: HomeAssistant, js_dir: str):
-    """라이브러리 파일이 없으면 자동으로 다운로드합니다."""
     target = os.path.join(js_dir, "marked.min.js")
     if os.path.exists(target):
         return
-
     url = "https://cdn.jsdelivr.net/npm/marked/marked.min.js"
-    _LOGGER.info("Private HACS: Downloading dependency marked.min.js...")
-    
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, timeout=15) as resp:
@@ -105,9 +108,6 @@ async def _async_ensure_marked_js(hass: HomeAssistant, js_dir: str):
                         with open(target, "wb") as f:
                             f.write(content)
                     await hass.async_add_executor_job(_write)
-                    _LOGGER.info("Private HACS: Successfully downloaded marked.min.js")
-                else:
-                    _LOGGER.error("Failed to download marked.min.js (Status: %s)", resp.status)
     except Exception as err:
         _LOGGER.error("Error downloading marked.min.js: %s", err)
 
@@ -119,25 +119,15 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
     hass_id = id(hass)
     if hass_id in _REGISTERED_HASS_IDS:
         return
-
     panel_dir = os.path.join(os.path.dirname(__file__), "frontend")
     js_dir = os.path.join(panel_dir, "js")
     os.makedirs(js_dir, exist_ok=True)
-
-    # ⭐ 핵심: 라이브러리 자동 다운로드 실행
     await _async_ensure_marked_js(hass, js_dir)
-
-    await hass.async_add_executor_job(
-        _write_panel_js_sync, os.path.join(js_dir, "panel.js")
-    )
-
-    await hass.http.async_register_static_paths(
-        [
-            StaticPathConfig("/private_hacs_panel", panel_dir, False),
-            StaticPathConfig("/private_hacs_panel/js", js_dir, False),
-        ]
-    )
-
+    await hass.async_add_executor_job(_write_panel_js_sync, os.path.join(js_dir, "panel.js"))
+    await hass.http.async_register_static_paths([
+        StaticPathConfig("/private_hacs_panel", panel_dir, False),
+        StaticPathConfig("/private_hacs_panel/js", js_dir, False),
+    ])
     await async_register_panel(
         hass,
         webcomponent_name="private-hacs-panel",
@@ -147,7 +137,6 @@ async def async_setup_panel(hass: HomeAssistant) -> None:
         js_url=f"/private_hacs_panel/js/panel.js?t={int(time.time())}",
         require_admin=True,
     )
-
     _REGISTERED_HASS_IDS.add(hass_id)
 
 async def async_remove_panel(hass: HomeAssistant) -> None:
