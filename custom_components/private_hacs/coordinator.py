@@ -17,23 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class PrivateHacsCoordinator(DataUpdateCoordinator):
-    """
-    Polls GitHub for the latest version of every registered repository.
-
-    coordinator.data → dict[component_id, RepoData]
-
-    RepoData keys:
-        repo                    str
-        name                    str
-        component_id            str
-        branch                  str
-        latest                  dict|None
-        installed_version       str|None
-        installed_commit_sha    str|None   (저장된 commit SHA)
-        is_installed            bool
-        version_source          str        "store" | "manifest" | "none"
-        has_update              bool       업데이트 여부 (commit 기반 포함)
-    """
+    """Polls GitHub for the latest version of every registered repository."""
 
     def __init__(
         self,
@@ -67,28 +51,28 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 )
                 latest = await self.github.resolve_latest(repo, component_id, default_branch)
             except Exception as err:
-                _LOGGER.warning("Failed to fetch info for %s: %s", repo, err)
+                _LOGGER.warning("Failed to fetch version info for %s: %s", repo, err)
                 latest = None
 
-            installed_version, version_source = await self._async_resolve_installed_version(component_id)
+            installed_version, version_source = await self._resolve_installed_version(
+                component_id
+            )
             installed_commit_sha = self.store.get(component_id).get("installed_commit_sha")
 
-            # manifest 버전을 store에 자동 저장
+            # Persist manifest-detected version to store so it survives restarts
             if version_source == "manifest" and installed_version:
                 await self.store.async_set(
                     component_id, {"installed_version": installed_version}
                 )
                 _LOGGER.info(
-                    "Auto-detected %s v%s from manifest.json — saved to store",
+                    "Auto-detected %s v%s from manifest.json — persisted to store",
                     component_id,
                     installed_version,
                 )
                 version_source = "store"
 
-            is_installed = await self._async_check_installed(component_id)
-            has_update = self._compute_has_update(
-                latest, installed_version, installed_commit_sha
-            )
+            is_installed = await self._check_installed(component_id)
+            has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
 
             results[component_id] = {
                 "repo": repo,
@@ -105,6 +89,10 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
 
         return results
 
+    # ------------------------------------------------------------------
+    # Update detection
+    # ------------------------------------------------------------------
+
     def _compute_has_update(
         self,
         latest: dict | None,
@@ -112,64 +100,63 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
         installed_commit_sha: str | None,
     ) -> bool:
         """
-        업데이트 여부를 판단합니다.
+        Determine whether an update is available.
 
-        - 미설치: False
-        - release/tag 타입: 버전 문자열 비교
-        - branch 타입:
-            1. remote manifest version vs installed version 비교
-            2. 동일하거나 없으면 commit SHA 비교
+        - release / tag: compare version strings
+        - branch: compare remote manifest version first,
+                  then fall back to commit SHA comparison
         """
-        if not installed_version:
-            return False
-        if latest is None:
+        if not installed_version or latest is None:
             return False
 
         latest_type = latest.get("type")
-        latest_version = latest.get("version")
 
         if latest_type in ("release", "tag"):
-            # 버전 문자열이 다르면 업데이트
-            return installed_version != latest_version
+            return installed_version != latest.get("version")
 
         if latest_type == "branch":
             remote_manifest_version = latest.get("remote_manifest_version")
             remote_commit_sha = latest.get("commit_sha")
 
-            # remote manifest 버전이 있으면 버전 비교 우선
+            # Prefer manifest version comparison when available
             if remote_manifest_version:
                 if remote_manifest_version != installed_version:
                     return True
 
-            # 버전이 같거나 없으면 commit SHA 비교
+            # Fall back to commit SHA comparison
             if remote_commit_sha and installed_commit_sha:
                 return remote_commit_sha != installed_commit_sha
 
-            # commit SHA가 없으면 (저장 안 된 경우) 업데이트 없음으로 처리
-            return False
-
         return False
 
-    async def _async_resolve_installed_version(self, component_id: str) -> tuple[str | None, str]:
+    # ------------------------------------------------------------------
+    # Installed version resolution (store → manifest on disk)
+    # ------------------------------------------------------------------
+
+    async def _resolve_installed_version(
+        self, component_id: str
+    ) -> tuple[str | None, str]:
         stored = self.store.installed_version(component_id)
         if stored:
             return stored, "store"
 
-        manifest_version = await self._async_read_manifest_version(component_id)
+        manifest_version = await self.hass.async_add_executor_job(
+            self._read_manifest_version_sync, component_id
+        )
         if manifest_version:
             return manifest_version, "manifest"
 
         return None, "none"
 
     def _read_manifest_version_sync(self, component_id: str) -> str | None:
-        config_dir: str = self.hass.config.config_dir
-        manifest_path = os.path.join(
-            config_dir, "custom_components", component_id, "manifest.json"
+        """Read version from manifest.json (blocking — run in executor)."""
+        path = self.hass.config.path(
+            "custom_components", component_id, "manifest.json"
         )
-        if not os.path.isfile(manifest_path):
+        if not os.path.isfile(path):
             return None
         try:
-            with open(manifest_path, encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             version = data.get("version")
             return str(version) if version else None
@@ -177,19 +164,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Could not read manifest.json for %s: %s", component_id, err)
             return None
 
-    async def _async_read_manifest_version(self, component_id: str) -> str | None:
-        """파일 읽기를 백그라운드 스레드(Executor)에서 안전하게 실행합니다."""
-        return await self.hass.async_add_executor_job(
-            self._read_manifest_version_sync, component_id
-        )
-
-    def _check_installed_sync(self, component_id: str) -> bool:
-        config_dir: str = self.hass.config.config_dir
-        path = os.path.join(config_dir, "custom_components", component_id)
-        return os.path.isdir(path)
-
-    async def _async_check_installed(self, component_id: str) -> bool:
-        """디렉터리 확인도 백그라운드 스레드에서 안전하게 실행합니다."""
-        return await self.hass.async_add_executor_job(
-            self._check_installed_sync, component_id
-        )
+    async def _check_installed(self, component_id: str) -> bool:
+        """Check whether the component directory exists (blocking — run in executor)."""
+        path = self.hass.config.path("custom_components", component_id)
+        return await self.hass.async_add_executor_job(os.path.isdir, path)
