@@ -180,13 +180,12 @@
   </div>
 </div>
 
-<!-- 저장소 추가 모달 -->
 <div class="modal-backdrop" id="addModal">
   <div class="modal">
     <h2>저장소 추가</h2>
     <div class="modal-field">
       <label>GitHub 저장소 *</label>
-      <input id="addRepo" placeholder="owner/repo-name 또는 https://github.com/owner/repo" autocomplete="off">
+      <input id="addRepo" placeholder="owner/repo-name 또는 https://github.com/owner/repo" autocomplete="off" oninput="handleRepoInput(event)">
       <div class="hint">전체 URL 또는 owner/repo-name 형식 모두 지원</div>
       <div class="repo-preview" id="repoPreview">
         <div class="repo-preview-name" id="previewName"></div>
@@ -205,7 +204,6 @@
   </div>
 </div>
 
-<!-- Confirm dialog -->
 <div class="confirm-backdrop" id="confirmBackdrop">
   <div class="confirm-box">
     <h3 id="confirmTitle">확인</h3>
@@ -226,7 +224,10 @@ var busyComponents = new Set();
 var _pendingRepoInfo = null;
 var _repoLookupTimer = null;
 
-var $el = function(id) { return document.getElementById(id); };
+// 수정 1: Shadow DOM 내에서 요소를 찾을 수 있도록 window.__privateHacsPanel 탐색
+var $el = function(id) { 
+  return window.__privateHacsPanel ? window.__privateHacsPanel.querySelector('#' + id) : document.getElementById(id); 
+};
 
 async function getToken() {
   if (typeof window.__privateHacsGetToken === 'function') {
@@ -337,7 +338,8 @@ function updateStats() {
 
 function setTab(tab, btn) {
   activeTab = tab;
-  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  // 수정 2: window.__privateHacsPanel 탐색
+  (window.__privateHacsPanel || document).querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
   btn.classList.add('active');
   renderRepos();
 }
@@ -515,7 +517,8 @@ function closeAddModal() {
   _pendingRepoInfo = null;
 }
 
-$el('addRepo').oninput = function(e) {
+// 수정 3: 익명 함수 동적 바인딩에서 명명된 함수로 변경
+function handleRepoInput(e) {
   const repo = _parseRepoInput(e.target.value);
   $el('repoPreview').classList.remove('visible');
   $el('addSubmitBtn').disabled = true;
@@ -523,7 +526,7 @@ $el('addRepo').oninput = function(e) {
   clearTimeout(_repoLookupTimer);
   if (!repo) return;
   _repoLookupTimer = setTimeout(function() { lookupRepo(repo); }, 800);
-};
+}
 
 async function lookupRepo(repo) {
   $el('repoPreview').classList.add('visible');
