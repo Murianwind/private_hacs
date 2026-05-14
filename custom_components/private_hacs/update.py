@@ -31,8 +31,8 @@ async def async_setup_entry(
 
 
 class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateEntity):
-
-    _attr_has_entity_name = True
+    # 수정: 장치 이름이 엔티티 이름 앞에 붙는 것을 방지하기 위해 False 설정
+    _attr_has_entity_name = False
     _attr_auto_update = False
     _attr_supported_features = (
         UpdateEntityFeature.RELEASE_NOTES
@@ -50,9 +50,14 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         self._component_id: str = repo_cfg["component_id"]
         self._entry_id = entry.entry_id
 
+        # 요구사항 1 반영: 엔티티 ID 형식을 직접 지정 (update.korea_gasapp_update)
+        self.entity_id = f"update.{self._component_id}_update"
+        
         self._attr_unique_id = f"{DOMAIN}_{self._component_id}"
-        self._attr_name = f"{repo_cfg['name']} update"
-        self._attr_title = repo_cfg["name"]
+        
+        # 요구사항 2 반영: 표시 이름을 저장소 이름으로만 설정
+        self._attr_name = repo_cfg['name']
+        self._attr_title = repo_cfg['name']
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
@@ -78,27 +83,20 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def latest_version(self) -> str | None:
-        """
-        업데이트가 있으면 실제 최신 버전을, 없으면 설치 버전을 반환.
-        (HA는 installed != latest 이면 업데이트로 표시하므로 coordinator의 has_update로 제어)
-        """
         has_update = self._repo_data.get("has_update", False)
         latest_ver = self._latest.get("version")
         installed_ver = self._repo_data.get("installed_version")
 
         if not has_update:
-            # 업데이트 없으면 installed와 동일하게 반환 → HA가 최신으로 표시
             return installed_ver
         return latest_ver
 
     @property
     def release_url(self) -> str | None:
-        """release가 있으면 release 페이지, 없으면 commit 로그 페이지."""
         latest = self._latest
         release_url = latest.get("release_url")
         if release_url:
             return release_url
-        # branch 타입이면 commits 페이지
         repo = self._repo_data.get("repo")
         branch = self._repo_data.get("branch", "main")
         if repo:
