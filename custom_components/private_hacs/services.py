@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er  # 엔티티 삭제를 위해 추가된 부분
+from homeassistant.helpers import entity_registry as er
 
 from .const import CONF_GITHUB_TOKEN, CONF_REPOS, DOMAIN
 
@@ -193,12 +193,13 @@ async def _do_add_repo(
     if any(r["component_id"] == component_id for r in current_repos):
         raise HomeAssistantError(f"'{component_id}'는 이미 등록된 저장소입니다.")
 
-    current_repos.append({
+    new_repo = {
         "repo": repo,
         "name": name,
         "component_id": component_id,
         "branch": branch,
-    })
+    }
+    current_repos.append(new_repo)
 
     hass.config_entries.async_update_entry(
         entry,
@@ -208,6 +209,13 @@ async def _do_add_repo(
     ed = _get_entry_data(hass)
     if ed:
         ed["coordinator"].repos = current_repos
+
+        # 추가 1: HA 재시작 없이 즉시 센서를 메모리에 동적 생성 
+        if "async_add_entities" in ed:
+            from .update import PrivateHacsUpdateEntity
+            new_entity = PrivateHacsUpdateEntity(ed["coordinator"], entry, new_repo)
+            ed["async_add_entities"]([new_entity])
+
         await ed["coordinator"].async_request_refresh()
 
     _LOGGER.info("Repo added: %s (%s)", name, repo)
@@ -224,7 +232,6 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
     if len(new_repos) == len(current_repos):
         raise HomeAssistantError(f"'{component_id}'는 등록된 저장소가 아닙니다.")
 
-    # 1. 설정 항목에서 저장소 정보 업데이트
     hass.config_entries.async_update_entry(
         entry,
         data={**entry.data, CONF_REPOS: new_repos},
@@ -238,7 +245,13 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
             del coordinator.data[component_id]
         coordinator.async_update_listeners()
 
-    # 2. [수정됨] Entity Registry에서 고아(Orphan) 상태가 될 엔티티를 명시적으로 완전 삭제
+        # 완전 삭제 1: 동작 중인 센서 객체를 찾아 즉각적으로 종료 (상태 머신 업데이트 영구 중단)
+        if "update_entities" in ed:
+            entity = ed["update_entities"].get(component_id)
+            if entity:
+                await entity.async_remove(force_remove=True)
+
+    # 완전 삭제 2: Entity Registry 데이터베이스에서도 기록 영구 제거
     ent_reg = er.async_get(hass)
     unique_id = f"{DOMAIN}_{component_id}"
     entity_id = ent_reg.async_get_entity_id("update", DOMAIN, unique_id)
