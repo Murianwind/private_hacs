@@ -31,7 +31,6 @@ async def async_setup_entry(
 
 
 class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateEntity):
-    """One update entity per tracked private repository."""
 
     _attr_has_entity_name = True
     _attr_auto_update = False
@@ -79,11 +78,32 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def latest_version(self) -> str | None:
-        return self._latest.get("version")
+        """
+        업데이트가 있으면 실제 최신 버전을, 없으면 설치 버전을 반환.
+        (HA는 installed != latest 이면 업데이트로 표시하므로 coordinator의 has_update로 제어)
+        """
+        has_update = self._repo_data.get("has_update", False)
+        latest_ver = self._latest.get("version")
+        installed_ver = self._repo_data.get("installed_version")
+
+        if not has_update:
+            # 업데이트 없으면 installed와 동일하게 반환 → HA가 최신으로 표시
+            return installed_ver
+        return latest_ver
 
     @property
     def release_url(self) -> str | None:
-        return self._latest.get("release_url")
+        """release가 있으면 release 페이지, 없으면 commit 로그 페이지."""
+        latest = self._latest
+        release_url = latest.get("release_url")
+        if release_url:
+            return release_url
+        # branch 타입이면 commits 페이지
+        repo = self._repo_data.get("repo")
+        branch = self._repo_data.get("branch", "main")
+        if repo:
+            return f"https://github.com/{repo}/commits/{branch}"
+        return None
 
     @property
     def release_summary(self) -> str | None:
@@ -99,18 +119,19 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def extra_state_attributes(self) -> dict:
-        """Expose version_source so the panel UI can show auto-detected badge."""
+        latest = self._latest
         return {
             "version_source": self._repo_data.get("version_source", "none"),
+            "latest_type": latest.get("type"),
+            "remote_commit_sha": latest.get("commit_sha"),
+            "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
         }
 
     async def async_release_notes(self) -> str | None:
         return self.release_summary
 
     async def async_install(self, version: str | None, backup: bool, **kwargs) -> None:
-        """Trigger install via the integration's service."""
-        hass = self.hass
-        await hass.services.async_call(
+        await self.hass.services.async_call(
             DOMAIN,
             "install",
             {"component_id": self._component_id},
