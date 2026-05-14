@@ -23,14 +23,16 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
     coordinator.data → dict[component_id, RepoData]
 
     RepoData keys:
-        repo              str        "owner/repo"
-        name              str        friendly name
-        component_id      str
-        branch            str        default branch
-        latest            dict|None  from GitHubClient.resolve_latest()
-        installed_version str|None   resolved version (store → manifest → None)
-        is_installed      bool       directory physically exists
-        version_source    str        "store" | "manifest" | "none"
+        repo                    str
+        name                    str
+        component_id            str
+        branch                  str
+        latest                  dict|None
+        installed_version       str|None
+        installed_commit_sha    str|None   (저장된 commit SHA)
+        is_installed            bool
+        version_source          str        "store" | "manifest" | "none"
+        has_update              bool       업데이트 여부 (commit 기반 포함)
     """
 
     def __init__(
@@ -50,10 +52,6 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
         self.github = github
         self.store = store
 
-    # ------------------------------------------------------------------
-    # Main update
-    # ------------------------------------------------------------------
-
     async def _async_update_data(self) -> dict[str, dict]:
         results: dict[str, dict] = {}
 
@@ -62,23 +60,20 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             component_id: str = item["component_id"]
             branch: str = item.get("branch", "main")
 
-            # ── GitHub latest version ──────────────────────────────────
             try:
                 repo_info = await self.github.get_repo_info(repo)
                 default_branch = (
                     repo_info.get("default_branch", branch) if repo_info else branch
                 )
-                latest = await self.github.resolve_latest(repo, default_branch)
+                latest = await self.github.resolve_latest(repo, component_id, default_branch)
             except Exception as err:
                 _LOGGER.warning("Failed to fetch info for %s: %s", repo, err)
                 latest = None
 
-            # ── Installed version (store → manifest fallback) ──────────
-            installed_version, version_source = self._resolve_installed_version(
-                component_id
-            )
+            installed_version, version_source = self._resolve_installed_version(component_id)
+            installed_commit_sha = self.store.get(component_id).get("installed_commit_sha")
 
-            # ── Persist manifest version into store if not yet tracked ─
+            # manifest 버전을 store에 자동 저장
             if version_source == "manifest" and installed_version:
                 await self.store.async_set(
                     component_id, {"installed_version": installed_version}
@@ -88,9 +83,12 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                     component_id,
                     installed_version,
                 )
-                version_source = "store"  # now persisted
+                version_source = "store"
 
             is_installed = self._check_installed(component_id)
+            has_update = self._compute_has_update(
+                latest, installed_version, installed_commit_sha
+            )
 
             results[component_id] = {
                 "repo": repo,
@@ -99,31 +97,64 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 "branch": branch,
                 "latest": latest,
                 "installed_version": installed_version,
+                "installed_commit_sha": installed_commit_sha,
                 "is_installed": is_installed,
                 "version_source": version_source,
+                "has_update": has_update,
             }
 
         return results
 
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
+    def _compute_has_update(
+        self,
+        latest: dict | None,
+        installed_version: str | None,
+        installed_commit_sha: str | None,
+    ) -> bool:
+        """
+        업데이트 여부를 판단합니다.
 
-    def _resolve_installed_version(
-        self, component_id: str
-    ) -> tuple[str | None, str]:
+        - 미설치: False
+        - release/tag 타입: 버전 문자열 비교
+        - branch 타입:
+            1. remote manifest version vs installed version 비교
+            2. 동일하거나 없으면 commit SHA 비교
         """
-        Return (version, source) where source is one of:
-          "store"    — previously saved by Private HACS after install
-          "manifest" — read live from the component's manifest.json
-          "none"     — component not installed or no version info
-        """
-        # 1. Check store first (most reliable; set by us after install)
+        if not installed_version:
+            return False
+        if latest is None:
+            return False
+
+        latest_type = latest.get("type")
+        latest_version = latest.get("version")
+
+        if latest_type in ("release", "tag"):
+            # 버전 문자열이 다르면 업데이트
+            return installed_version != latest_version
+
+        if latest_type == "branch":
+            remote_manifest_version = latest.get("remote_manifest_version")
+            remote_commit_sha = latest.get("commit_sha")
+
+            # remote manifest 버전이 있으면 버전 비교 우선
+            if remote_manifest_version:
+                if remote_manifest_version != installed_version:
+                    return True
+
+            # 버전이 같거나 없으면 commit SHA 비교
+            if remote_commit_sha and installed_commit_sha:
+                return remote_commit_sha != installed_commit_sha
+
+            # commit SHA가 없으면 (저장 안 된 경우) 업데이트 없음으로 처리
+            return False
+
+        return False
+
+    def _resolve_installed_version(self, component_id: str) -> tuple[str | None, str]:
         stored = self.store.installed_version(component_id)
         if stored:
             return stored, "store"
 
-        # 2. Fall back to manifest.json on disk
         manifest_version = self._read_manifest_version(component_id)
         if manifest_version:
             return manifest_version, "manifest"
@@ -131,10 +162,6 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
         return None, "none"
 
     def _read_manifest_version(self, component_id: str) -> str | None:
-        """
-        Read `version` from custom_components/<component_id>/manifest.json.
-        Returns None if the file doesn't exist or has no version field.
-        """
         config_dir: str = self.hass.config.config_dir
         manifest_path = os.path.join(
             config_dir, "custom_components", component_id, "manifest.json"
@@ -147,13 +174,10 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             version = data.get("version")
             return str(version) if version else None
         except Exception as err:
-            _LOGGER.debug(
-                "Could not read manifest.json for %s: %s", component_id, err
-            )
+            _LOGGER.debug("Could not read manifest.json for %s: %s", component_id, err)
             return None
 
     def _check_installed(self, component_id: str) -> bool:
-        """Return True if the component directory physically exists."""
         config_dir: str = self.hass.config.config_dir
         path = os.path.join(config_dir, "custom_components", component_id)
         return os.path.isdir(path)
