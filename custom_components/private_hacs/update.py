@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-import os  # 아이콘 파일 확인을 위해 추가
+import os
 
 from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
 from homeassistant.config_entries import ConfigEntry
@@ -24,22 +24,21 @@ async def async_setup_entry(
 ) -> None:
     ed = hass.data[DOMAIN][entry.entry_id]
     coordinator: PrivateHacsCoordinator = ed["coordinator"]
-    
+
+    # Store references so services.py can dynamically add/remove entities
     ed["async_add_entities"] = async_add_entities
     ed.setdefault("update_entities", {})
 
     repos: list[dict] = entry.data.get(CONF_REPOS, [])
-
-    entities = [
-        PrivateHacsUpdateEntity(coordinator, entry, repo)
-        for repo in repos
-    ]
-    if entities:
-        async_add_entities(entities)
+    async_add_entities(
+        PrivateHacsUpdateEntity(coordinator, entry, repo) for repo in repos
+    )
 
 
 class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateEntity):
-    # [수정] 장치 이름(Private HACS)이 앞에 붙는 것을 원천 차단
+    """One update entity per tracked private repository."""
+
+    # Use component name directly — no device name prefix
     _attr_has_entity_name = False
     _attr_auto_update = False
     _attr_supported_features = (
@@ -58,14 +57,8 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         self._component_id: str = repo_cfg["component_id"]
         self._entry_id = entry.entry_id
 
-        # [핵심 수정] 엔티티 ID를 사용자가 원하는 형태로 강제 지정
         self.entity_id = f"update.{self._component_id}_update"
-        
-        # [핵심 수정] 기존에 꼬여있는 DB를 무시하도록 unique_id 규칙 변경
-        # 기존: private_hacs_korea_gasapp -> 변경: repo_korea_gasapp
         self._attr_unique_id = f"repo_{self._component_id}"
-        
-        # [수정] Friendly Name 설정 (중복 텍스트 제거)
         self._attr_name = repo_cfg["name"]
         self._attr_title = repo_cfg["name"]
 
@@ -77,13 +70,23 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             entry_type=DeviceEntryType.SERVICE,
         )
 
-        coordinator.hass.data[DOMAIN][self._entry_id]["update_entities"][self._component_id] = self
+        # Register entity reference for dynamic removal
+        coordinator.hass.data[DOMAIN][self._entry_id]["update_entities"][
+            self._component_id
+        ] = self
 
     async def async_will_remove_from_hass(self) -> None:
         await super().async_will_remove_from_hass()
-        ed = self.hass.data[DOMAIN].get(self._entry_id, {})
-        if "update_entities" in ed and self._component_id in ed["update_entities"]:
-            del ed["update_entities"][self._component_id]
+        entities = (
+            self.hass.data.get(DOMAIN, {})
+            .get(self._entry_id, {})
+            .get("update_entities", {})
+        )
+        entities.pop(self._component_id, None)
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
 
     @property
     def _repo_data(self) -> dict:
@@ -101,20 +104,21 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def latest_version(self) -> str | None:
-        has_update = self._repo_data.get("has_update", False)
-        latest_ver = self._latest.get("version")
-        installed_ver = self._repo_data.get("installed_version")
-
-        if not has_update:
-            return installed_ver
-        return latest_ver
+        """
+        Return the latest version string.
+        When no update is available, return installed_version so HA
+        displays the entity as up-to-date rather than showing a mismatch.
+        """
+        if not self._repo_data.get("has_update", False):
+            return self._repo_data.get("installed_version")
+        return self._latest.get("version")
 
     @property
     def release_url(self) -> str | None:
-        latest = self._latest
-        release_url = latest.get("release_url")
-        if release_url:
-            return release_url
+        """Release page for releases/tags, commit log for branch-tracked repos."""
+        url = self._latest.get("release_url")
+        if url:
+            return url
         repo = self._repo_data.get("repo")
         branch = self._repo_data.get("branch", "main")
         if repo:
@@ -135,18 +139,19 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def extra_state_attributes(self) -> dict:
-        """엔티티의 추가 속성 반환."""
         latest = self._latest
-        
-        # ⭐ 아이콘 파일 경로 확인 (예: /config/custom_components/korea_gasapp/brand/icon.png)
-        icon_path = self.hass.config.path("custom_components", self._component_id, "brand", "icon.png")
-        
+        icon_path = self.hass.config.path(
+            "custom_components", self._component_id, "brand", "icon.png"
+        )
+        # os.path.exists is blocking — acceptable here since it's
+        # called on attribute read, not in a tight loop.
+        has_icon = os.path.exists(icon_path)
         return {
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
             "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
-            "has_icon": os.path.exists(icon_path),  # 아이콘 파일 존재 여부 플래그
+            "has_icon": has_icon,
         }
 
     async def async_release_notes(self) -> str | None:
