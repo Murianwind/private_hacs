@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os  # 아이콘 파일 확인을 위해 추가
 
 from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
 from homeassistant.config_entries import ConfigEntry
@@ -134,12 +135,18 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def extra_state_attributes(self) -> dict:
+        """엔티티의 추가 속성 반환."""
         latest = self._latest
+        
+        # ⭐ 아이콘 파일 경로 확인 (예: /config/custom_components/korea_gasapp/brand/icon.png)
+        icon_path = self.hass.config.path("custom_components", self._component_id, "brand", "icon.png")
+        
         return {
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
             "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
+            "has_icon": os.path.exists(icon_path),  # 아이콘 파일 존재 여부 플래그
         }
 
     async def async_release_notes(self) -> str | None:
