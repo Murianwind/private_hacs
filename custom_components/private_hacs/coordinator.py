@@ -70,7 +70,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Failed to fetch info for %s: %s", repo, err)
                 latest = None
 
-            installed_version, version_source = self._resolve_installed_version(component_id)
+            installed_version, version_source = await self._async_resolve_installed_version(component_id)
             installed_commit_sha = self.store.get(component_id).get("installed_commit_sha")
 
             # manifest 버전을 store에 자동 저장
@@ -85,7 +85,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 )
                 version_source = "store"
 
-            is_installed = self._check_installed(component_id)
+            is_installed = await self._async_check_installed(component_id)
             has_update = self._compute_has_update(
                 latest, installed_version, installed_commit_sha
             )
@@ -150,18 +150,18 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
 
         return False
 
-    def _resolve_installed_version(self, component_id: str) -> tuple[str | None, str]:
+    async def _async_resolve_installed_version(self, component_id: str) -> tuple[str | None, str]:
         stored = self.store.installed_version(component_id)
         if stored:
             return stored, "store"
 
-        manifest_version = self._read_manifest_version(component_id)
+        manifest_version = await self._async_read_manifest_version(component_id)
         if manifest_version:
             return manifest_version, "manifest"
 
         return None, "none"
 
-    def _read_manifest_version(self, component_id: str) -> str | None:
+    def _read_manifest_version_sync(self, component_id: str) -> str | None:
         config_dir: str = self.hass.config.config_dir
         manifest_path = os.path.join(
             config_dir, "custom_components", component_id, "manifest.json"
@@ -177,7 +177,19 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Could not read manifest.json for %s: %s", component_id, err)
             return None
 
-    def _check_installed(self, component_id: str) -> bool:
+    async def _async_read_manifest_version(self, component_id: str) -> str | None:
+        """파일 읽기를 백그라운드 스레드(Executor)에서 안전하게 실행합니다."""
+        return await self.hass.async_add_executor_job(
+            self._read_manifest_version_sync, component_id
+        )
+
+    def _check_installed_sync(self, component_id: str) -> bool:
         config_dir: str = self.hass.config.config_dir
         path = os.path.join(config_dir, "custom_components", component_id)
         return os.path.isdir(path)
+
+    async def _async_check_installed(self, component_id: str) -> bool:
+        """디렉터리 확인도 백그라운드 스레드에서 안전하게 실행합니다."""
+        return await self.hass.async_add_executor_job(
+            self._check_installed_sync, component_id
+        )
