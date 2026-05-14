@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import logging
+
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er  # 엔티티 삭제를 위해 추가된 부분
 
 from .const import CONF_GITHUB_TOKEN, CONF_REPOS, DOMAIN
 
@@ -19,7 +21,6 @@ SERVICE_REFRESH = "refresh"
 SERVICE_ADD_REPO = "add_repo"
 SERVICE_REMOVE_REPO = "remove_repo"
 SERVICE_GET_REPO_INFO = "get_repo_info"
-# 요구사항 3 구현을 위해 추가된 서비스 상수
 SERVICE_GET_README = "get_readme"
 
 SCHEMA_COMPONENT = vol.Schema({vol.Required("component_id"): cv.string})
@@ -34,7 +35,6 @@ SCHEMA_ADD_REPO = vol.Schema(
 )
 SCHEMA_REMOVE_REPO = vol.Schema({vol.Required("component_id"): cv.string})
 SCHEMA_GET_REPO_INFO = vol.Schema({vol.Required("repo"): cv.string})
-# README 조회를 위한 스키마
 SCHEMA_GET_README = vol.Schema({
     vol.Required("repo"): cv.string,
     vol.Optional("branch", default="main"): cv.string,
@@ -68,7 +68,6 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def handle_get_repo_info(call: ServiceCall) -> ServiceResponse:
         return await _do_get_repo_info(hass, call.data["repo"])
 
-    # README 조회를 위한 서비스 핸들러 등록
     async def handle_get_readme(call: ServiceCall) -> ServiceResponse:
         return await _do_get_readme(hass, call.data["repo"], call.data.get("branch", "main"))
 
@@ -81,7 +80,6 @@ def async_register_services(hass: HomeAssistant) -> None:
         hass, SERVICE_GET_REPO_INFO, handle_get_repo_info, SCHEMA_GET_REPO_INFO,
         supports_response=SupportsResponse.ONLY,
     )
-    # README 서비스 등록 (응답 전용)
     _register_once(
         hass, SERVICE_GET_README, handle_get_readme, SCHEMA_GET_README,
         supports_response=SupportsResponse.ONLY,
@@ -153,7 +151,6 @@ async def _do_install(hass: HomeAssistant, component_id: str) -> None:
 
 
 async def _do_uninstall(hass: HomeAssistant, component_id: str) -> None:
-    """컴포넌트 삭제 로직 (요구사항 4 반영)"""
     ed = _get_entry_data(hass)
     if ed is None:
         raise HomeAssistantError("Private HACS가 로드되지 않았습니다.")
@@ -217,7 +214,6 @@ async def _do_add_repo(
 
 
 async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
-    """등록 해제 로직 (요구사항 4 반영)"""
     entry = _get_entry(hass)
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
@@ -228,6 +224,7 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
     if len(new_repos) == len(current_repos):
         raise HomeAssistantError(f"'{component_id}'는 등록된 저장소가 아닙니다.")
 
+    # 1. 설정 항목에서 저장소 정보 업데이트
     hass.config_entries.async_update_entry(
         entry,
         data={**entry.data, CONF_REPOS: new_repos},
@@ -240,6 +237,13 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
         if coordinator.data and component_id in coordinator.data:
             del coordinator.data[component_id]
         coordinator.async_update_listeners()
+
+    # 2. [수정됨] Entity Registry에서 고아(Orphan) 상태가 될 엔티티를 명시적으로 완전 삭제
+    ent_reg = er.async_get(hass)
+    unique_id = f"{DOMAIN}_{component_id}"
+    entity_id = ent_reg.async_get_entity_id("update", DOMAIN, unique_id)
+    if entity_id:
+        ent_reg.async_remove(entity_id)
 
     _LOGGER.info("Repo removed: %s", component_id)
 
@@ -275,9 +279,7 @@ async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
         "component_ids": component_ids,
     }
 
-# 요구사항 3을 처리하는 백엔드 함수
 async def _do_get_readme(hass: HomeAssistant, repo: str, branch: str) -> ServiceResponse:
-    """저장소의 README 내용을 가져와 반환합니다."""
     ed = _get_entry_data(hass)
     if ed is None:
         raise HomeAssistantError("Private HACS가 로드되지 않았습니다.")
