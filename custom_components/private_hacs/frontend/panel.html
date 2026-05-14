@@ -65,7 +65,16 @@
   .repo-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: flex; align-items: center; gap: 16px; transition: border-color .15s; }
   .repo-card:hover { border-color: var(--primary); }
   .repo-card.has-update { border-left: 3px solid var(--warning); }
-  .repo-icon { width: 48px; height: 48px; flex-shrink: 0; background: linear-gradient(135deg, var(--primary), #7c4dff); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; cursor: pointer; }
+  
+  /* 아이콘 컨테이너 스타일 */
+  .repo-icon { 
+    width: 48px; height: 48px; flex-shrink: 0; 
+    background: linear-gradient(135deg, var(--primary), #7c4dff); 
+    border-radius: 12px; display: flex; align-items: center; justify-content: center; 
+    font-size: 22px; cursor: pointer; overflow: hidden;
+  }
+  .repo-icon img { width: 32px; height: 32px; object-fit: contain; }
+  
   .repo-info { flex: 1; min-width: 0; }
   
   .repo-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; display: inline-block; cursor: pointer; color: var(--text); transition: color .15s; text-decoration: underline; text-decoration-color: transparent; }
@@ -119,7 +128,6 @@
     height: 85vh;
   }
 
-  /* GitHub 스타일 렌더링을 위한 마크다운 본문 디자인 보강 */
   .readme-content {
     flex: 1; overflow-y: auto; background: var(--github-bg); border: 1px solid var(--github-border);
     border-radius: var(--radius-sm); padding: 32px; color: #c9d1d9; font-size: 14px; line-height: 1.6;
@@ -328,7 +336,7 @@ async function fetchRepos() {
   const states = results[0].result || [];
   const reg = results[1].result || [];
 
-  const entityToComponentId = {};
+  const entityToInfo = {};
   reg
     .filter(function(e) { return e.platform === 'private_hacs'; })
     .forEach(function(e) { 
@@ -337,21 +345,22 @@ async function fetchRepos() {
             compId = compId.substring('private_hacs_'.length);
         } else if (compId && compId.indexOf(UID_PREFIX) === 0) {
             compId = compId.substring(UID_PREFIX.length);
+        } else if (compId && compId.indexOf('repo_') === 0) {
+            compId = compId.substring('repo_'.length);
         }
-        entityToComponentId[e.entity_id] = compId;
+        entityToInfo[e.entity_id] = compId;
     });
 
   return states
-    .filter(function(s) { return s.entity_id.indexOf('update.') === 0 && entityToComponentId[s.entity_id]; })
+    .filter(function(s) { return s.entity_id.indexOf('update.') === 0 && entityToInfo[s.entity_id]; })
     .map(function(s) {
       const a = s.attributes;
-      const componentId = entityToComponentId[s.entity_id];
+      const componentId = entityToInfo[s.entity_id];
       const installed = a.installed_version || null;
       const latest = a.latest_version || null;
       const hasUpdate = s.state === 'on';
       
       const rawName = a.friendly_name || s.entity_id;
-      
       let cleanName = rawName.replace(/ update$/i, '');
       if (cleanName.indexOf('Private HACS ') === 0) {
           cleanName = cleanName.substring('Private HACS '.length);
@@ -375,6 +384,8 @@ async function fetchRepos() {
         is_installed: !!installed,
         version_source: a.version_source || (installed ? 'store' : 'none'),
         latest_type: a.latest_type || null,
+        // ⭐ 백엔드 속성에서 아이콘 존재 여부 추출
+        has_icon: a.has_icon || false,
       };
     });
 }
@@ -452,6 +463,11 @@ function repoCardHTML(r) {
   const releaseLink = r.release_url
     ? '<a href="' + esc(r.release_url) + '" target="_blank" style="font-size:11px;color:var(--primary);text-decoration:none">' + linkLabel + '</a>' : '';
 
+  // ⭐ 아이콘 렌더링 로직
+  const iconContent = r.has_icon 
+    ? '<img src="/private_hacs_icons/' + r.component_id + '/brand/icon.png" onerror="this.outerHTML=\'🧩\'">'
+    : '🧩';
+
   let actions = '';
   if (busy) {
     actions = '<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>';
@@ -477,7 +493,7 @@ function repoCardHTML(r) {
   const clickHandler = r.repo_url ? 'onclick="openReadmeModal(\'' + esc(r.repo_url) + '\', \'' + esc(r.name) + '\')"' : '';
 
   return '<div class="' + cardClass + '" id="card-' + r.component_id + '">'
-    + '<div class="repo-icon" ' + clickHandler + '>🧩</div>'
+    + '<div class="repo-icon" ' + clickHandler + '>' + iconContent + '</div>'
     + '<div class="repo-info">'
     + '<div class="repo-name" title="README 보기" ' + clickHandler + '>' + esc(r.name) + '</div>'
     + '<div class="repo-meta" style="margin-top:6px;">' + statusBadge + sourceBadge + installedBadge + latestBadge + releaseLink + '</div>'
@@ -570,19 +586,14 @@ async function openReadmeModal(repoUrl, name) {
 
     if (res.error) throw new Error(res.error.message || '조회 실패');
     
-    // 응답 데이터 구조에 따른 유연한 추출
     const info = (res.result && res.result.response) || res.response || res.result || {};
     const content = info.content || "README 내용이 없습니다.";
     
-    // ⭐ marked 라이브러리를 사용한 마크다운 렌더링
     if (window.marked && typeof marked.parse === 'function') {
-        // GitHub 스타일 줄바꿈 등 옵션 설정
         marked.setOptions({ gfm: true, breaks: true });
         $el('readmeContent').innerHTML = '<div class="markdown-body">' + marked.parse(content) + '</div>';
     } else {
-        // 라이브러리 로드 실패 시 원문 표시
         $el('readmeContent').innerHTML = '<pre style="white-space: pre-wrap;">' + esc(content) + '</pre>';
-        console.warn('marked library not found or parse function missing');
     }
 
   } catch (err) {
