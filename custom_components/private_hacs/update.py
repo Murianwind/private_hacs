@@ -24,7 +24,6 @@ async def async_setup_entry(
     ed = hass.data[DOMAIN][entry.entry_id]
     coordinator: PrivateHacsCoordinator = ed["coordinator"]
     
-    # 동적 추가 및 강제 종료를 위해 콜백과 엔티티 주소를 저장
     ed["async_add_entities"] = async_add_entities
     ed.setdefault("update_entities", {})
 
@@ -39,7 +38,7 @@ async def async_setup_entry(
 
 
 class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateEntity):
-
+    # [수정] 장치 이름(Private HACS)이 앞에 붙는 것을 원천 차단
     _attr_has_entity_name = False
     _attr_auto_update = False
     _attr_supported_features = (
@@ -58,9 +57,14 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         self._component_id: str = repo_cfg["component_id"]
         self._entry_id = entry.entry_id
 
+        # [핵심 수정] 엔티티 ID를 사용자가 원하는 형태로 강제 지정
         self.entity_id = f"update.{self._component_id}_update"
         
-        self._attr_unique_id = f"{DOMAIN}_{self._component_id}"
+        # [핵심 수정] 기존에 꼬여있는 DB를 무시하도록 unique_id 규칙 변경
+        # 기존: private_hacs_korea_gasapp -> 변경: repo_korea_gasapp
+        self._attr_unique_id = f"repo_{self._component_id}"
+        
+        # [수정] Friendly Name 설정 (중복 텍스트 제거)
         self._attr_name = repo_cfg["name"]
         self._attr_title = repo_cfg["name"]
 
@@ -72,11 +76,9 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             entry_type=DeviceEntryType.SERVICE,
         )
 
-        # 인스턴스 생성 시 메모리에 자신의 주소 등록
         coordinator.hass.data[DOMAIN][self._entry_id]["update_entities"][self._component_id] = self
 
     async def async_will_remove_from_hass(self) -> None:
-        """엔티티가 시스템에서 완전히 삭제될 때 호출됨."""
         await super().async_will_remove_from_hass()
         ed = self.hass.data[DOMAIN].get(self._entry_id, {})
         if "update_entities" in ed and self._component_id in ed["update_entities"]:
