@@ -5,6 +5,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import CONF_GITHUB_TOKEN, CONF_REPOS, DOMAIN
 from .coordinator import PrivateHacsCoordinator
@@ -23,7 +24,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     token: str | None = entry.data.get(CONF_GITHUB_TOKEN)
     repos: list[dict] = entry.data.get(CONF_REPOS, [])
 
-    github = GitHubClient(token)
+    # [수정] Home Assistant의 aiohttp 세션을 가져와 GitHubClient에 전달합니다.
+    session = async_get_clientsession(hass)
+    github = GitHubClient(token, session)
+    
     store = RepositoryStore(hass)
     await store.async_load()
 
@@ -44,10 +48,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Sidebar panel
     await async_setup_panel(hass)
-
-    # 수정됨: 저장소를 추가/제거할 때마다 전체 컴포넌트가 재시작되어 패널이 닫히는 현상을 
-    # 막기 위해 _async_reload_listener 관련 코드를 삭제했습니다.
-    # services.py에서 이미 in-memory(coordinator) 업데이트를 처리하므로 리로드가 필요 없습니다.
 
     return True
 
