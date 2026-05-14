@@ -1,6 +1,6 @@
 install:
   name: "설치/업데이트"
-  description: "지정한 private 컴포넌트를 설치하거나 최신 버전으로 업데이트합니다."
+  description: "지정한 컴포넌트를 최신 버전으로 설치하거나 업데이트합니다."
   fields:
     component_id:
       name: "컴포넌트 ID"
@@ -11,8 +11,8 @@ install:
         text:
 
 uninstall:
-  name: "파일 삭제"
-  description: "지정한 컴포넌트의 파일을 삭제합니다. 저장소 등록은 유지됩니다."
+  name: "컴포넌트 삭제"
+  description: "컴포넌트 파일을 삭제합니다. 저장소 등록은 유지됩니다."
   fields:
     component_id:
       name: "컴포넌트 ID"
@@ -60,13 +60,44 @@ add_repo:
         text:
 
 remove_repo:
-  name: "저장소 제거"
-  description: "저장소 등록을 해제합니다. 설치된 파일은 삭제되지 않습니다."
+  name: "저장소 등록 해제"
+  description: "저장소 등록을 해제합니다. 설치된 파일과 버전 정보는 삭제되지 않습니다."
   fields:
     component_id:
       name: "컴포넌트 ID"
       description: "제거할 저장소의 component_id"
       required: true
       example: "my_integration"
+      selector:
+        text:
+
+get_repo_info:
+  name: "저장소 정보 조회"
+  description: "GitHub API로 저장소 정보를 조회합니다 (패널 내부용)."
+  fields:
+    repo:
+      name: "저장소"
+      description: "owner/repo-name"
+      required: true
+      example: "your-org/your-integration"
+      selector:
+        text:
+
+get_readme:
+  name: "README 조회"
+  description: "저장소의 README.md 내용을 조회합니다 (패널 내부용)."
+  fields:
+    repo:
+      name: "저장소"
+      description: "owner/repo-name"
+      required: true
+      example: "your-org/your-integration"
+      selector:
+        text:
+    branch:
+      name: "브랜치"
+      description: "조회할 브랜치 (기본값: main)"
+      required: false
+      example: "main"
       selector:
         text:
