@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, ServiceResponse, Supp
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 
-from .const import CONF_REPOS, DOMAIN
+from .const import CONF_GITHUB_TOKEN, CONF_REPOS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ SCHEMA_GET_REPO_INFO = vol.Schema({vol.Required("repo"): cv.string})
 
 
 def async_register_services(hass: HomeAssistant) -> None:
+    """Register all Private HACS services (idempotent)."""
 
     async def handle_install(call: ServiceCall) -> None:
         await _do_install(hass, call.data["component_id"])
@@ -111,12 +112,16 @@ async def _do_install(hass: HomeAssistant, component_id: str) -> None:
     store = ed["store"]
 
     if coordinator.data is None or component_id not in coordinator.data:
-        raise HomeAssistantError(f"'{component_id}'를 찾을 수 없습니다. 먼저 저장소를 등록하세요.")
+        raise HomeAssistantError(
+            f"'{component_id}'를 찾을 수 없습니다. 먼저 저장소를 등록하세요."
+        )
 
     repo_data = coordinator.data[component_id]
     latest = repo_data.get("latest")
     if latest is None:
-        raise HomeAssistantError(f"'{component_id}' 버전 정보가 없습니다. 새로고침 후 다시 시도하세요.")
+        raise HomeAssistantError(
+            f"'{component_id}' 버전 정보가 없습니다. 새로고침 후 다시 시도하세요."
+        )
 
     repo: str = repo_data["repo"]
     ref: str = latest["download_ref"]
@@ -127,12 +132,7 @@ async def _do_install(hass: HomeAssistant, component_id: str) -> None:
     except Exception as exc:
         raise HomeAssistantError(f"설치 실패: {exc}") from exc
 
-    # 버전과 commit SHA 함께 저장
-    store_data: dict = {"installed_version": latest["version"]}
-    if latest.get("commit_sha"):
-        store_data["installed_commit_sha"] = latest["commit_sha"]
-
-    await store.async_set(component_id, store_data)
+    await store.async_set(component_id, {"installed_version": latest["version"]})
     await coordinator.async_request_refresh()
 
 
@@ -200,7 +200,6 @@ async def _do_add_repo(
 
 
 async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
-    """저장소 등록만 해제 — 설치된 파일과 store 데이터는 유지."""
     entry = _get_entry(hass)
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
@@ -224,11 +223,11 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str) -> None:
             del coordinator.data[component_id]
         coordinator.async_update_listeners()
 
-    # store 데이터는 삭제하지 않음 — 재등록 시 설치 정보 복원용
-    _LOGGER.info("Repo removed (files kept): %s", component_id)
+    _LOGGER.info("Repo removed: %s", component_id)
 
 
 async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
+    """GitHub API로 저장소 정보 조회 — 토큰 사용."""
     ed = _get_entry_data(hass)
     if ed is None:
         raise HomeAssistantError("Private HACS가 로드되지 않았습니다.")
@@ -243,6 +242,7 @@ async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
     if repo_info is None:
         raise HomeAssistantError(f"저장소 '{repo}'를 찾을 수 없습니다.")
 
+    # custom_components 하위 폴더 목록 조회
     component_ids: list[str] = []
     try:
         contents = await github.get_contents(repo, "custom_components")
