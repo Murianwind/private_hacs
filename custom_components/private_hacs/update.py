@@ -31,7 +31,7 @@ async def async_setup_entry(
 
 
 class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateEntity):
-    # 수정: 장치 이름이 엔티티 이름 앞에 붙는 것을 방지하기 위해 False 설정
+
     _attr_has_entity_name = False
     _attr_auto_update = False
     _attr_supported_features = (
@@ -50,14 +50,14 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         self._component_id: str = repo_cfg["component_id"]
         self._entry_id = entry.entry_id
 
-        # 요구사항 1 반영: 엔티티 ID 형식을 직접 지정 (update.korea_gasapp_update)
+        # HA가 강제로 도메인을 붙이는 것을 방지하기 위해 entity_id 자체를 고정
         self.entity_id = f"update.{self._component_id}_update"
         
         self._attr_unique_id = f"{DOMAIN}_{self._component_id}"
         
-        # 요구사항 2 반영: 표시 이름을 저장소 이름으로만 설정
-        self._attr_name = repo_cfg['name']
-        self._attr_title = repo_cfg['name']
+        # 이름에서 Private HACS가 붙지 않게 명확하게 지정
+        self._attr_name = repo_cfg["name"]
+        self._attr_title = repo_cfg["name"]
 
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, entry.entry_id)},
