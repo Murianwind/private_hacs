@@ -1,0 +1,22 @@
+name: HACS Validate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: HACS Action
+        uses: hacs/action@main
+        with:
+          category: integration
+        env:
+          # Node.js 24 환경 강제 사용
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
