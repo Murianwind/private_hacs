@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Private HACS</title>
-<!-- marked.js 추가 (README 마크다운 렌더링용) -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <style>
   :root {
@@ -131,7 +130,6 @@
     font-size: 14px;
     line-height: 1.6;
   }
-  /* 기본 마크다운 스타일링 */
   .readme-content h1, .readme-content h2, .readme-content h3 { border-bottom: 1px solid #3a3a3c; padding-bottom: 8px; margin-top: 24px; margin-bottom: 16px; }
   .readme-content h1:first-child { margin-top: 0; }
   .readme-content a { color: var(--primary); text-decoration: none; }
@@ -221,7 +219,6 @@
   </div>
 </div>
 
-<!-- 저장소 추가 모달 -->
 <div class="modal-backdrop" id="addModal">
   <div class="modal">
     <h2>저장소 추가</h2>
@@ -246,7 +243,6 @@
   </div>
 </div>
 
-<!-- README 모달 (요구사항 3) -->
 <div class="modal-backdrop" id="readmeModal">
   <div class="modal">
     <h2 id="readmeTitle">저장소 정보</h2>
@@ -259,7 +255,6 @@
   </div>
 </div>
 
-<!-- Confirm dialog -->
 <div class="confirm-backdrop" id="confirmBackdrop">
   <div class="confirm-box">
     <h3 id="confirmTitle">확인</h3>
@@ -279,7 +274,6 @@ var activeTab = 'all';
 var busyComponents = new Set();
 var _pendingRepoInfo = null;
 var _repoLookupTimer = null;
-// Shadow DOM 우회 탐색
 var $el = function(id) { 
   return window.__privateHacsPanel ? window.__privateHacsPanel.querySelector('#' + id) : document.getElementById(id); 
 };
@@ -339,7 +333,6 @@ async function fetchRepos() {
   const states = results[0].result || [];
   const reg = results[1].result || [];
 
-  // registry에서 unique_id 역추적
   const entityToComponentId = {};
   reg
     .filter(function(e) { return e.unique_id && e.unique_id.indexOf(UID_PREFIX) === 0 && e.platform === 'private_hacs'; })
@@ -347,10 +340,7 @@ async function fetchRepos() {
         entityToComponentId[e.entity_id] = e.unique_id.substring(UID_PREFIX.length);
     });
 
-  // registry에서 config_entry 기반 repo url 등을 가져올 수도 있지만
-  // state의 attribute 활용
   return states
-    // update.xxx 엔티티 필터링 (요구사항 1 변경으로 접두사 없음, 매핑으로 찾음)
     .filter(function(s) { return s.entity_id.indexOf('update.') === 0 && entityToComponentId[s.entity_id]; })
     .map(function(s) {
       const a = s.attributes;
@@ -359,12 +349,9 @@ async function fetchRepos() {
       const latest = a.latest_version || null;
       const hasUpdate = s.state === 'on';
       
-      // HA update.py 에서 _attr_name 을 repo_cfg['name'] 으로만 줬으므로
-      // friendly_name 에서 Private HACS 가 빠지고 korea_gasapp 만 나옴.
       const rawName = a.friendly_name || s.entity_id;
       const cleanName = rawName.replace(/ update$/i, '');
 
-      // 저장소 URL 유추
       let repoUrl = '';
       if (a.release_url) {
         const match = a.release_url.match(/github\.com\/([^\/]+\/[^\/]+)/);
@@ -460,37 +447,34 @@ function repoCardHTML(r) {
   const releaseLink = r.release_url
     ? '<a href="' + esc(r.release_url) + '" target="_blank" style="font-size:11px;color:var(--primary);text-decoration:none">' + linkLabel + '</a>' : '';
 
-  // 요구사항 4: 파일 삭제 -> 컴포넌트 삭제로 텍스트 변경
   let actions = '';
   if (busy) {
     actions = '<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>';
   } else if (!r.is_installed) {
     actions = [
-      '<button class="btn btn-success btn-sm" onclick="install('' + esc(r.component_id) + '','' + esc(r.name) + '')">⬇ 설치</button>',
-      '<button class="btn btn-danger btn-sm" onclick="removeRepo('' + esc(r.component_id) + '','' + esc(r.name) + '')">등록 해제</button>',
+      '<button class="btn btn-success btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">⬇ 설치</button>',
+      '<button class="btn btn-danger btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">등록 해제</button>',
     ].join('');
   } else if (r.has_update) {
     actions = [
-      '<button class="btn btn-warning btn-sm" onclick="install('' + esc(r.component_id) + '','' + esc(r.name) + '')">⬆ 업데이트</button>',
-      '<button class="btn btn-danger btn-sm" onclick="uninstall('' + esc(r.component_id) + '','' + esc(r.name) + '')">컴포넌트 삭제</button>',
-      '<button class="btn btn-ghost btn-sm" onclick="removeRepo('' + esc(r.component_id) + '','' + esc(r.name) + '')">등록 해제</button>',
+      '<button class="btn btn-warning btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">⬆ 업데이트</button>',
+      '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>',
+      '<button class="btn btn-ghost btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">등록 해제</button>',
     ].join('');
   } else {
     actions = [
-      '<button class="btn btn-ghost btn-sm" onclick="install('' + esc(r.component_id) + '','' + esc(r.name) + '')">🔄 재설치</button>',
-      '<button class="btn btn-danger btn-sm" onclick="uninstall('' + esc(r.component_id) + '','' + esc(r.name) + '')">컴포넌트 삭제</button>',
-      '<button class="btn btn-ghost btn-sm" onclick="removeRepo('' + esc(r.component_id) + '','' + esc(r.name) + '')">등록 해제</button>',
+      '<button class="btn btn-ghost btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">🔄 재설치</button>',
+      '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>',
+      '<button class="btn btn-ghost btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.name) + '\')">등록 해제</button>',
     ].join('');
   }
 
-  // 요구사항 2: 중복된 repo 텍스트 제거 및 이름 클릭 (README 모달) 추가
   const clickHandler = r.repo_url ? 'onclick="openReadmeModal(\'' + esc(r.repo_url) + '\', \'' + esc(r.name) + '\')"' : '';
 
   return '<div class="' + cardClass + '" id="card-' + r.component_id + '">'
     + '<div class="repo-icon" ' + clickHandler + '>🧩</div>'
     + '<div class="repo-info">'
     + '<div class="repo-name" title="README 보기" ' + clickHandler + '>' + esc(r.name) + '</div>'
-    // 기존의 <div class="repo-repo"> 제거 (중복된 korea_gasapp 제거)
     + '<div class="repo-meta" style="margin-top:6px;">' + statusBadge + sourceBadge + installedBadge + latestBadge + releaseLink + '</div>'
     + '</div>'
     + '<div class="repo-actions">' + actions + '</div>'
@@ -515,13 +499,9 @@ async function install(componentId, name) {
   }
 }
 
-// 요구사항 4: 컴포넌트 삭제
 async function uninstall(componentId, name) {
   showConfirm('컴포넌트 삭제',
-    name + ' 컴포넌트를 삭제하시겠습니까?
-
-저장소 등록은 유지됩니다.
-삭제 후 HA를 재시작해야 완전히 제거됩니다.',
+    name + ' 컴포넌트를 삭제하시겠습니까?\n\n저장소 등록은 유지됩니다.\n삭제 후 HA를 재시작해야 완전히 제거됩니다.',
     async function() {
       busyComponents.add(componentId); renderRepos();
       toast(name + ' 컴포넌트 삭제 중...', 'info');
@@ -537,13 +517,9 @@ async function uninstall(componentId, name) {
     });
 }
 
-// 요구사항 4: 등록 해제
 async function removeRepo(componentId, name) {
   showConfirm('저장소 등록 해제',
-    name + '을(를) Private HACS에서 제거하시겠습니까?
-
-설치된 파일은 자동으로 삭제되지 않습니다.
-나중에 다시 등록하면 기존 설치 정보가 복원됩니다.',
+    name + '을(를) Private HACS에서 제거하시겠습니까?\n\n설치된 파일은 자동으로 삭제되지 않습니다.\n나중에 다시 등록하면 기존 설치 정보가 복원됩니다.',
     async function() {
       toast(name + ' 등록 해제 중...', 'info');
       try {
@@ -573,7 +549,6 @@ async function refreshAll() {
   }
 }
 
-// 요구사항 3: README 모달
 async function openReadmeModal(repoUrl, name) {
   $el('readmeTitle').textContent = name;
   $el('readmeContent').innerHTML = '<div class="loading"><div class="spinner"></div><div>README 불러오는 중...</div></div>';
