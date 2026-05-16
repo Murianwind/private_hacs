@@ -115,6 +115,10 @@ async def _async_ensure_marked_js(hass: HomeAssistant, js_dir: str):
         _LOGGER.error("Error downloading marked.min.js: %s", err)
 
 def _write_panel_js_sync(path: str) -> None:
+    if os.path.exists(path):
+        with open(path, "r", encoding="utf-8") as f:
+            if f.read() == _PANEL_JS:
+                return
     with open(path, "w", encoding="utf-8") as f:
         f.write(_PANEL_JS)
 
