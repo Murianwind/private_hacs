@@ -25,25 +25,13 @@
     --radius: 12px;
     --radius-sm: 8px;
 
-    /* 모달은 항상 불투명하게 — 테마에 관계없이 */
-    --modal-bg: #1c1c1e;
-    --modal-border: #3a3a3c;
-    --modal-text: #e5e5ea;
-    --modal-text-secondary: #98989f;
-    --modal-input-bg: #2c2c2e;
-    --modal-preview-bg: #2c2c2e;
-  }
-
-  /* HA 밝은 테마 감지 — ha-panel 요소가 light 클래스를 가질 때 모달 색상 반전 */
-  @media (prefers-color-scheme: light) {
-    :root {
-      --modal-bg: #ffffff;
-      --modal-border: #e0e0e0;
-      --modal-text: #212121;
-      --modal-text-secondary: #757575;
-      --modal-input-bg: #f5f5f5;
-      --modal-preview-bg: #f5f5f5;
-    }
+    /* 모달 변수를 HA 테마 변수와 연동 */
+    --modal-bg: var(--card-background-color, #1c1c1e);
+    --modal-border: var(--divider-color, #3a3a3c);
+    --modal-text: var(--primary-text-color, #e5e5ea);
+    --modal-text-secondary: var(--secondary-text-color, #98989f);
+    --modal-input-bg: var(--secondary-background-color, #2c2c2e);
+    --modal-preview-bg: var(--secondary-background-color, #2c2c2e);
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -388,6 +376,8 @@
     color: var(--primary);
     font-family: 'SFMono-Regular', Consolas, monospace;
     font-size: 12px; margin-top: 6px;
+    font-family: inherit;
+    font-size: 13px; margin-top: 6px;
   }
 
   /* README */
@@ -552,42 +542,42 @@
 <div class="toast-container" id="toastContainer"></div>
 
 <script>
-var repos = [];
-var activeTab = 'all';
-var busyComponents = new Set();
-var _pendingRepoInfo = null;
-var _repoLookupTimer = null;
-var $el = function(id) { 
+let repos = [];
+let activeTab = 'all';
+const busyComponents = new Set();
+let _pendingRepoInfo = null;
+let _repoLookupTimer = null;
+const $el = function(id) { 
   return window.__privateHacsPanel ? window.__privateHacsPanel.querySelector('#' + id) : document.getElementById(id); 
 };
 
-async function getToken() {
+async function getAuthToken() {
   if (typeof window.__privateHacsGetToken === 'function') {
     return window.__privateHacsGetToken();
   }
   return Promise.reject(new Error('패널이 올바르게 로드되지 않았습니다.'));
 }
 
-var ws = null;
-var msgId = 1;
-var pending = {};
+let ws = null;
+let msgId = 1;
+const pendingRequests = {};
 
 async function connectWS() {
-  const token = await getToken();
+  const token = await getAuthToken();
   return new Promise((resolve, reject) => {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(proto + '://' + location.host + '/api/websocket');
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
       if (msg.type === 'auth_required') {
         ws.send(JSON.stringify({ type: 'auth', access_token: token }));
       } else if (msg.type === 'auth_ok') {
         resolve();
       } else if (msg.type === 'auth_invalid') {
         reject(new Error('HA 인증 실패'));
-      } else if (msg.id && pending[msg.id]) {
-        pending[msg.id](msg);
-        delete pending[msg.id];
+      } else if (msg.id && pendingRequests[msg.id]) {
+        pendingRequests[msg.id](msg);
+        delete pendingRequests[msg.id];
       }
     };
     ws.onerror = () => reject(new Error('WebSocket 연결 오류'));
@@ -597,7 +587,7 @@ async function connectWS() {
 function wsSend(msg) {
   return new Promise((resolve) => {
     const id = msgId++;
-    pending[id] = resolve;
+    pendingRequests[id] = resolve;
     ws.send(JSON.stringify(Object.assign({}, msg, { id: id })));
   });
 }
