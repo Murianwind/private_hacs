@@ -23,8 +23,15 @@ _ADD_REPO = "add_repo"
 _REMOVE_REPO = "remove_repo"
 _GET_REPO_INFO = "get_repo_info"
 _GET_README = "get_readme"
+_GET_RELEASES = "get_releases"
 
 _SCHEMA_COMPONENT = vol.Schema({vol.Required("component_id"): cv.string})
+_SCHEMA_INSTALL = vol.Schema(
+    {
+        vol.Required("component_id"): cv.string,
+        vol.Optional("ref"): cv.string,
+    }
+)
 _SCHEMA_EMPTY = vol.Schema({})
 _SCHEMA_ADD_REPO = vol.Schema(
     {
@@ -42,13 +49,14 @@ _SCHEMA_GET_README = vol.Schema(
         vol.Optional("branch", default="main"): cv.string,
     }
 )
+_SCHEMA_GET_RELEASES = vol.Schema({vol.Required("component_id"): cv.string})
 
 
 def async_register_services(hass: HomeAssistant) -> None:
     """Register all Private HACS services (idempotent)."""
 
     async def handle_install(call: ServiceCall) -> None:
-        await _do_install(hass, call.data["component_id"])
+        await _do_install(hass, call.data["component_id"], call.data.get("ref"))
 
     async def handle_uninstall(call: ServiceCall) -> None:
         await _do_uninstall(hass, call.data["component_id"])
@@ -74,7 +82,10 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def handle_get_readme(call: ServiceCall) -> ServiceResponse:
         return await _do_get_readme(hass, call.data["repo"], call.data.get("branch", "main"))
 
-    _register_once(hass, _INSTALL, handle_install, _SCHEMA_COMPONENT)
+    async def handle_get_releases(call: ServiceCall) -> ServiceResponse:
+        return await _do_get_releases(hass, call.data["component_id"])
+
+    _register_once(hass, _INSTALL, handle_install, _SCHEMA_INSTALL)
     _register_once(hass, _UNINSTALL, handle_uninstall, _SCHEMA_COMPONENT)
     _register_once(hass, _REFRESH, handle_refresh, _SCHEMA_EMPTY)
     _register_once(hass, _ADD_REPO, handle_add_repo, _SCHEMA_ADD_REPO)
@@ -85,6 +96,10 @@ def async_register_services(hass: HomeAssistant) -> None:
     )
     _register_once(
         hass, _GET_README, handle_get_readme, _SCHEMA_GET_README,
+        supports_response=SupportsResponse.ONLY,
+    )
+    _register_once(
+        hass, _GET_RELEASES, handle_get_releases, _SCHEMA_GET_RELEASES,
         supports_response=SupportsResponse.ONLY,
     )
 
@@ -104,7 +119,10 @@ def _register_once(
 
 
 def async_unregister_services(hass: HomeAssistant) -> None:
-    for svc in (_INSTALL, _UNINSTALL, _REFRESH, _ADD_REPO, _REMOVE_REPO, _GET_REPO_INFO, _GET_README):
+    for svc in (
+        _INSTALL, _UNINSTALL, _REFRESH, _ADD_REPO, _REMOVE_REPO,
+        _GET_REPO_INFO, _GET_README, _GET_RELEASES,
+    ):
         if hass.services.has_service(DOMAIN, svc):
             hass.services.async_remove(DOMAIN, svc)
 
@@ -136,7 +154,9 @@ def _require_entry_data(hass: HomeAssistant) -> dict:
 # Service implementations
 # ------------------------------------------------------------------
 
-async def _do_install(hass: HomeAssistant, component_id: str) -> None:
+async def _do_install(
+    hass: HomeAssistant, component_id: str, ref: str | None = None
+) -> None:
     ed = _require_entry_data(hass)
     coordinator = ed["coordinator"]
     github = ed["github"]
@@ -155,18 +175,29 @@ async def _do_install(hass: HomeAssistant, component_id: str) -> None:
         )
 
     repo: str = repo_data["repo"]
-    ref: str = latest["download_ref"]
-    _LOGGER.info("Installing %s from %s @ %s", component_id, repo, ref)
+
+    # ref가 명시된 경우 해당 태그/브랜치로 설치, 없으면 latest 사용
+    if ref:
+        download_ref = ref
+        install_version = ref
+    else:
+        download_ref = latest["download_ref"]
+        install_version = latest["version"]
+
+    _LOGGER.info("Installing %s from %s @ %s", component_id, repo, download_ref)
 
     try:
-        await github.download_and_install(hass, repo, component_id, ref)
+        await github.download_and_install(hass, repo, component_id, download_ref)
     except Exception as exc:
         raise HomeAssistantError(f"설치 실패: {exc}") from exc
 
     # Persist version and commit SHA so update detection works correctly
-    store_data: dict = {"installed_version": latest["version"]}
-    if latest.get("commit_sha"):
+    store_data: dict = {"installed_version": install_version}
+    if not ref and latest.get("commit_sha"):
         store_data["installed_commit_sha"] = latest["commit_sha"]
+    elif ref:
+        # 특정 버전 지정 설치 시 commit SHA 초기화 (버전 문자열로 비교)
+        store_data["installed_commit_sha"] = None
     await store.async_set(component_id, store_data)
 
     await coordinator.async_request_refresh()
@@ -322,3 +353,21 @@ async def _do_get_readme(
     except Exception as exc:
         _LOGGER.error("Failed to fetch README for %s: %s", repo, exc)
         return {"content": f"README 로드 중 오류 발생: {exc}"}
+
+
+async def _do_get_releases(
+    hass: HomeAssistant, component_id: str
+) -> ServiceResponse:
+    ed = _require_entry_data(hass)
+    coordinator = ed["coordinator"]
+    github = ed["github"]
+
+    if coordinator.data is None or component_id not in coordinator.data:
+        raise HomeAssistantError(f"'{component_id}'를 찾을 수 없습니다.")
+
+    repo: str = coordinator.data[component_id]["repo"]
+    try:
+        releases = await github.get_releases(repo, max_count=10)
+        return {"releases": releases}
+    except Exception as exc:
+        raise HomeAssistantError(f"릴리즈 목록 조회 실패: {exc}") from exc
