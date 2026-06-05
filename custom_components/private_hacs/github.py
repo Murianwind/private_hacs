@@ -63,6 +63,25 @@ class GitHubClient:
                 _LOGGER.debug("get_readme %s → %s", repo, resp.status)
             return None
 
+    async def get_releases(self, repo: str, max_count: int = 10) -> list[dict]:
+        """Return up to max_count releases (tag_name, name, published_at, html_url)."""
+        url = f"{_GITHUB_API}/repos/{repo}/releases?per_page={max_count}"
+        async with self._session.get(url, headers=self._headers()) as resp:
+            if resp.status != 200:
+                return []
+            releases = await resp.json()
+            return [
+                {
+                    "tag_name": r["tag_name"],
+                    "name": r.get("name") or r["tag_name"],
+                    "published_at": (r.get("published_at") or "")[:10],
+                    "html_url": r.get("html_url", ""),
+                    "prerelease": r.get("prerelease", False),
+                }
+                for r in releases
+                if isinstance(r, dict)
+            ]
+
     # ------------------------------------------------------------------
     # Version resolution: release → tag → branch
     # ------------------------------------------------------------------
