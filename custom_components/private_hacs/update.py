@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_REPOS, DOMAIN
-from .coordinator import PrivateHacsCoordinator
+from .coordinator import PrivateHacsCoordinator, make_entry_key
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,7 +25,6 @@ async def async_setup_entry(
     ed = hass.data[DOMAIN][entry.entry_id]
     coordinator: PrivateHacsCoordinator = ed["coordinator"]
 
-    # Store references so services.py can dynamically add/remove entities
     ed["async_add_entities"] = async_add_entities
     ed.setdefault("update_entities", {})
 
@@ -36,9 +35,8 @@ async def async_setup_entry(
 
 
 class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateEntity):
-    """One update entity per tracked private repository."""
+    """One update entity per (component_id, branch) pair."""
 
-    # Use component name directly — no device name prefix
     _attr_has_entity_name = False
     _attr_auto_update = False
     _attr_supported_features = (
@@ -55,11 +53,13 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
     ) -> None:
         super().__init__(coordinator)
         self._component_id: str = repo_cfg["component_id"]
+        self._branch: str = repo_cfg.get("branch", "main")
+        self._entry_key: str = make_entry_key(self._component_id, self._branch)
         self._entry_id = entry.entry_id
 
-        self.entity_id = f"update.{self._component_id}_update"
-        self._attr_unique_id = f"repo_{self._component_id}"
-        self._attr_name = repo_cfg["name"]
+        self.entity_id = f"update.{self._component_id}_{self._branch}_update"
+        self._attr_unique_id = f"repo_{self._component_id}_{self._branch}"
+        self._attr_name = f"{repo_cfg['name']} ({self._branch})"
         self._attr_title = repo_cfg["name"]
 
         self._attr_device_info = DeviceInfo(
@@ -70,9 +70,8 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             entry_type=DeviceEntryType.SERVICE,
         )
 
-        # Register entity reference for dynamic removal
         coordinator.hass.data[DOMAIN][self._entry_id]["update_entities"][
-            self._component_id
+            self._entry_key
         ] = self
 
     async def async_will_remove_from_hass(self) -> None:
@@ -82,7 +81,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             .get(self._entry_id, {})
             .get("update_entities", {})
         )
-        entities.pop(self._component_id, None)
+        entities.pop(self._entry_key, None)
 
     # ------------------------------------------------------------------
     # Properties
@@ -92,11 +91,16 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
     def _repo_data(self) -> dict:
         if self.coordinator.data is None:
             return {}
-        return self.coordinator.data.get(self._component_id) or {}
+        return self.coordinator.data.get(self._entry_key) or {}
 
     @property
     def _latest(self) -> dict:
         return self._repo_data.get("latest") or {}
+
+    @property
+    def available(self) -> bool:
+        """비활성 브랜치는 엔티티를 unavailable로 표시."""
+        return self._repo_data.get("active", True)
 
     @property
     def installed_version(self) -> str | None:
@@ -104,18 +108,12 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def latest_version(self) -> str | None:
-        """
-        Return the latest version string.
-        When no update is available, return installed_version so HA
-        displays the entity as up-to-date rather than showing a mismatch.
-        """
         if not self._repo_data.get("has_update", False):
             return self._repo_data.get("installed_version")
         return self._latest.get("version")
 
     @property
     def release_url(self) -> str | None:
-        """Release page for releases/tags, commit log for branch-tracked repos."""
         url = self._latest.get("release_url")
         if url:
             return url
@@ -143,10 +141,10 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         icon_path = self.hass.config.path(
             "custom_components", self._component_id, "brand", "icon.png"
         )
-        # os.path.exists is blocking — acceptable here since it's
-        # called on attribute read, not in a tight loop.
         has_icon = os.path.exists(icon_path)
         return {
+            "branch": self._branch,
+            "active": self._repo_data.get("active", True),
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
@@ -161,6 +159,6 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         await self.hass.services.async_call(
             DOMAIN,
             "install",
-            {"component_id": self._component_id},
+            {"component_id": self._component_id, "branch": self._branch},
             blocking=True,
         )
