@@ -16,6 +16,11 @@ from .store import RepositoryStore
 _LOGGER = logging.getLogger(__name__)
 
 
+def make_entry_key(component_id: str, branch: str) -> str:
+    """Return the internal dict key for a (component_id, branch) pair."""
+    return f"{component_id}@{branch}"
+
+
 class PrivateHacsCoordinator(DataUpdateCoordinator):
     """Polls GitHub for the latest version of every registered repository."""
 
@@ -43,6 +48,8 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             repo: str = item["repo"]
             component_id: str = item["component_id"]
             branch: str = item.get("branch", "main")
+            active: bool = item.get("active", True)
+            entry_key = make_entry_key(component_id, branch)
 
             try:
                 repo_info = await self.github.get_repo_info(repo)
@@ -55,30 +62,31 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 latest = None
 
             installed_version, version_source = await self._resolve_installed_version(
-                component_id
+                component_id, branch
             )
-            installed_commit_sha = self.store.get(component_id).get("installed_commit_sha")
+            store_entry = self.store.get_branch(component_id, branch)
+            installed_commit_sha = store_entry.get("installed_commit_sha")
 
-            # Persist manifest-detected version to store so it survives restarts
             if version_source == "manifest" and installed_version:
-                await self.store.async_set(
-                    component_id, {"installed_version": installed_version}
+                await self.store.async_set_branch(
+                    component_id, branch, {"installed_version": installed_version}
                 )
                 _LOGGER.info(
-                    "Auto-detected %s v%s from manifest.json — persisted to store",
-                    component_id,
-                    installed_version,
+                    "Auto-detected %s@%s v%s from manifest.json — persisted to store",
+                    component_id, branch, installed_version,
                 )
                 version_source = "store"
 
             is_installed = await self._check_installed(component_id)
             has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
 
-            results[component_id] = {
+            results[entry_key] = {
+                "entry_key": entry_key,
                 "repo": repo,
                 "name": item.get("name", repo),
                 "component_id": component_id,
                 "branch": branch,
+                "active": active,
                 "latest": latest,
                 "installed_version": installed_version,
                 "installed_commit_sha": installed_commit_sha,
@@ -99,13 +107,6 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
         installed_version: str | None,
         installed_commit_sha: str | None,
     ) -> bool:
-        """
-        Determine whether an update is available.
-
-        - release / tag: compare version strings
-        - branch: compare remote manifest version first,
-                  then fall back to commit SHA comparison
-        """
         if not installed_version or latest is None:
             return False
 
@@ -118,12 +119,10 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             remote_manifest_version = latest.get("remote_manifest_version")
             remote_commit_sha = latest.get("commit_sha")
 
-            # Prefer manifest version comparison when available
             if remote_manifest_version:
                 if remote_manifest_version != installed_version:
                     return True
 
-            # Fall back to commit SHA comparison
             if remote_commit_sha and installed_commit_sha:
                 return remote_commit_sha != installed_commit_sha
 
@@ -134,9 +133,9 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
     # ------------------------------------------------------------------
 
     async def _resolve_installed_version(
-        self, component_id: str
+        self, component_id: str, branch: str
     ) -> tuple[str | None, str]:
-        stored = self.store.installed_version(component_id)
+        stored = self.store.installed_version(component_id, branch)
         if stored:
             return stored, "store"
 
@@ -149,7 +148,6 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
         return None, "none"
 
     def _read_manifest_version_sync(self, component_id: str) -> str | None:
-        """Read version from manifest.json (blocking — run in executor)."""
         path = self.hass.config.path(
             "custom_components", component_id, "manifest.json"
         )
@@ -165,6 +163,5 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             return None
 
     async def _check_installed(self, component_id: str) -> bool:
-        """Check whether the component directory exists (blocking — run in executor)."""
         path = self.hass.config.path("custom_components", component_id)
         return await self.hass.async_add_executor_job(os.path.isdir, path)
