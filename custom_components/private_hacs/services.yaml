@@ -1,12 +1,19 @@
 install:
   name: "설치/업데이트"
-  description: "지정한 컴포넌트를 최신 버전으로 설치하거나 업데이트합니다."
+  description: "지정한 컴포넌트를 설치하거나 업데이트합니다. ref를 지정하면 해당 버전으로 설치합니다."
   fields:
     component_id:
       name: "컴포넌트 ID"
       description: "설치할 custom_component의 도메인 (예: my_integration)"
       required: true
       example: "my_integration"
+      selector:
+        text:
+    ref:
+      name: "버전 (태그/브랜치)"
+      description: "설치할 특정 릴리즈 태그 또는 브랜치명. 생략 시 최신 버전 설치."
+      required: false
+      example: "v1.2.0"
       selector:
         text:
 
@@ -99,5 +106,17 @@ get_readme:
       description: "조회할 브랜치 (기본값: main)"
       required: false
       example: "main"
+      selector:
+        text:
+
+get_releases:
+  name: "릴리즈 목록 조회"
+  description: "저장소의 릴리즈 목록을 조회합니다 (패널 내부용)."
+  fields:
+    component_id:
+      name: "컴포넌트 ID"
+      description: "조회할 저장소의 component_id"
+      required: true
+      example: "my_integration"
       selector:
         text:
