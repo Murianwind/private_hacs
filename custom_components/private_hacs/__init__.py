@@ -24,6 +24,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     token: str | None = entry.data.get(CONF_GITHUB_TOKEN)
     repos: list[dict] = entry.data.get(CONF_REPOS, [])
 
+    # active 필드가 없는 기존 항목을 active=True로 정규화해서 저장
+    repos = _normalize_repos(repos)
+    if repos != entry.data.get(CONF_REPOS, []):
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_REPOS: repos}
+        )
+        _LOGGER.info("Private HACS: normalized %d repo entries with missing 'active' field", len(repos))
+
     session = async_get_clientsession(hass)
     github = GitHubClient(token=token, session=session)
 
@@ -43,12 +51,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async_register_services(hass)
     await async_setup_panel(hass)
 
-    # 레거시 unique_id 형식 엔티티 정리
-    # 구형: repo_{component_id} (branch 없음)
-    # 신형: repo_{component_id}_{branch}
+    # 레거시 unique_id 엔티티 정리
     _async_cleanup_legacy_entities(hass, entry, repos)
 
     return True
+
+
+def _normalize_repos(repos: list[dict]) -> list[dict]:
+    """active 필드가 없는 항목에 active=True를 명시적으로 추가."""
+    result = []
+    for r in repos:
+        if "active" not in r:
+            result.append({**r, "active": True})
+        else:
+            result.append(dict(r))
+    return result
 
 
 def _async_cleanup_legacy_entities(
@@ -59,14 +76,11 @@ def _async_cleanup_legacy_entities(
     신형(repo_{component_id}_{branch})과 중복되어 패널에 정체불명 항목으로 표시되는 문제 방지.
     """
     ent_reg = er.async_get(hass)
-    valid_uids: set[str] = set()
+    valid_uids: set[str] = {
+        f"repo_{r['component_id']}_{r.get('branch', 'main')}"
+        for r in repos
+    }
 
-    for repo in repos:
-        cid = repo["component_id"]
-        branch = repo.get("branch", "main")
-        valid_uids.add(f"repo_{cid}_{branch}")
-
-    # update 플랫폼에서 private_hacs가 소유한 모든 엔티티 순회
     stale = [
         entity for entity in er.async_entries_for_config_entry(ent_reg, entry.entry_id)
         if entity.domain == "update"
