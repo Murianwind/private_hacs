@@ -389,10 +389,9 @@ async def _do_toggle_branch(
         component_id, branch, active, active,
     )
 
-    # 활성화 시: refresh 후 자동 설치
+    # 활성화 시 refresh만 수행 — 실제 설치는 패널에서 별도 호출
     if active:
         await coordinator.async_request_refresh()
-        await _do_install(hass, component_id, branch, ref=None)
 
 
 async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
