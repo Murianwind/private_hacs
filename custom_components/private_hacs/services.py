@@ -318,7 +318,18 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str, branch: str) -
 async def _do_toggle_branch(
     hass: HomeAssistant, component_id: str, branch: str, active: bool
 ) -> None:
-    """Activate or deactivate a branch entry."""
+    """
+    브랜치 활성/비활성 전환.
+
+    활성화(active=True) 시:
+      - config entry와 coordinator에 active 상태 반영
+      - coordinator 갱신 후 해당 브랜치 최신 버전 자동 설치
+        (릴리즈: 최신 태그, 커밋: 해당 브랜치 HEAD)
+      → "활성 브랜치 = 실제 설치된 파일" 항상 보장
+
+    비활성화(active=False) 시:
+      - 상태만 변경, 파일은 그대로 유지
+    """
     entry = _get_entry(hass)
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
@@ -341,15 +352,22 @@ async def _do_toggle_branch(
     )
 
     ed = _get_entry_data(hass)
-    if ed:
-        coordinator = ed["coordinator"]
-        coordinator.repos = new_repos
-        entry_key = make_entry_key(component_id, branch)
-        if coordinator.data and entry_key in coordinator.data:
-            coordinator.data[entry_key]["active"] = active
-        coordinator.async_update_listeners()
+    if not ed:
+        return
+
+    coordinator = ed["coordinator"]
+    coordinator.repos = new_repos
+    entry_key = make_entry_key(component_id, branch)
+    if coordinator.data and entry_key in coordinator.data:
+        coordinator.data[entry_key]["active"] = active
+    coordinator.async_update_listeners()
 
     _LOGGER.info("Branch %s@%s set active=%s", component_id, branch, active)
+
+    # 활성화 시: coordinator 갱신 후 해당 브랜치 자동 설치
+    if active:
+        await coordinator.async_request_refresh()
+        await _do_install(hass, component_id, branch, ref=None)
 
 
 async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
