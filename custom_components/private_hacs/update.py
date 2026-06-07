@@ -57,6 +57,10 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         self._entry_key: str = make_entry_key(self._component_id, self._branch)
         self._entry_id = entry.entry_id
 
+        # repo_cfg의 active를 초기값으로 캐시
+        # coordinator.data가 아직 없을 때의 fallback으로 사용
+        self._active_cache: bool = bool(repo_cfg.get("active", True))
+
         self.entity_id = f"update.{self._component_id}_{self._branch}_update"
         self._attr_unique_id = f"repo_{self._component_id}_{self._branch}"
         self._attr_name = f"{repo_cfg['name']} ({self._branch})"
@@ -98,9 +102,30 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         return self._repo_data.get("latest") or {}
 
     @property
+    def _is_active(self) -> bool:
+        """
+        active 상태 결정 우선순위:
+        1. coordinator.data에 entry_key가 있으면 그 값 사용
+        2. 없으면 생성 시 repo_cfg에서 받은 _active_cache 사용
+        """
+        data = self._repo_data
+        if data:
+            # coordinator.data에 값이 있으면 신뢰
+            return bool(data.get("active", self._active_cache))
+        # coordinator.data 갱신 전 — 캐시 사용
+        return self._active_cache
+
+    def _handle_coordinator_update(self) -> None:
+        """coordinator 갱신 시 _active_cache도 동기화."""
+        data = self._repo_data
+        if data and "active" in data:
+            self._active_cache = bool(data["active"])
+        super()._handle_coordinator_update()
+
+    @property
     def available(self) -> bool:
-        """비활성 브랜치는 엔티티를 unavailable로 표시."""
-        return self._repo_data.get("active", True)
+        """비활성 브랜치는 unavailable로 표시."""
+        return self._is_active
 
     @property
     def installed_version(self) -> str | None:
@@ -118,7 +143,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         if url:
             return url
         repo = self._repo_data.get("repo")
-        branch = self._repo_data.get("branch", "main")
+        branch = self._repo_data.get("branch", self._branch)
         if repo:
             return f"https://github.com/{repo}/commits/{branch}"
         return None
@@ -144,7 +169,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         has_icon = os.path.exists(icon_path)
         return {
             "branch": self._branch,
-            "active": self._repo_data.get("active", True),
+            "active": self._is_active,
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
