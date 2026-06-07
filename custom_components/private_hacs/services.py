@@ -26,12 +26,17 @@ _GET_REPO_INFO = "get_repo_info"
 _GET_README    = "get_readme"
 _GET_RELEASES  = "get_releases"
 
-_SCHEMA_COMPONENT = vol.Schema({vol.Required("component_id"): cv.string})
 _SCHEMA_INSTALL = vol.Schema(
     {
         vol.Required("component_id"): cv.string,
         vol.Required("branch"): cv.string,
         vol.Optional("ref"): cv.string,
+    }
+)
+_SCHEMA_UNINSTALL = vol.Schema(
+    {
+        vol.Required("component_id"): cv.string,
+        vol.Required("branch"): cv.string,
     }
 )
 _SCHEMA_EMPTY = vol.Schema({})
@@ -56,12 +61,6 @@ _SCHEMA_TOGGLE_BRANCH = vol.Schema(
         vol.Required("active"): cv.boolean,
     }
 )
-_SCHEMA_UNINSTALL = vol.Schema(
-    {
-        vol.Required("component_id"): cv.string,
-        vol.Required("branch"): cv.string,
-    }
-)
 _SCHEMA_GET_REPO_INFO = vol.Schema({vol.Required("repo"): cv.string})
 _SCHEMA_GET_README    = vol.Schema(
     {
@@ -69,7 +68,12 @@ _SCHEMA_GET_README    = vol.Schema(
         vol.Optional("branch", default="main"): cv.string,
     }
 )
-_SCHEMA_GET_RELEASES = vol.Schema({vol.Required("component_id"): cv.string, vol.Required("branch"): cv.string})
+_SCHEMA_GET_RELEASES = vol.Schema(
+    {
+        vol.Required("component_id"): cv.string,
+        vol.Required("branch"): cv.string,
+    }
+)
 
 
 def async_register_services(hass: HomeAssistant) -> None:
@@ -162,6 +166,17 @@ def _require_entry_data(hass: HomeAssistant) -> dict:
     return ed
 
 
+def _repos_with_active(repos: list[dict]) -> list[dict]:
+    """active 필드가 없는 기존 항목에 active=True를 명시적으로 추가."""
+    result = []
+    for r in repos:
+        if "active" not in r:
+            result.append({**r, "active": True})
+        else:
+            result.append(r)
+    return result
+
+
 # ------------------------------------------------------------------
 # Service implementations
 # ------------------------------------------------------------------
@@ -236,23 +251,29 @@ async def _do_add_repo(
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
 
-    current_repos: list[dict] = list(entry.data.get(CONF_REPOS, []))
+    # active 필드 정규화
+    current_repos: list[dict] = _repos_with_active(list(entry.data.get(CONF_REPOS, [])))
 
-    # 같은 component_id + branch 조합이 이미 있으면 중복
+    # 같은 component_id + branch 조합 중복 체크
     if any(r["component_id"] == component_id and r.get("branch", "main") == branch
            for r in current_repos):
         raise HomeAssistantError(
             f"'{component_id}' ({branch} 브랜치)는 이미 등록된 저장소입니다."
         )
 
-    # 같은 component_id의 첫 번째 등록이면 active=True, 추가 브랜치면 active=False
+    # 같은 component_id가 이미 있으면 새 브랜치는 비활성
     existing_same = [r for r in current_repos if r["component_id"] == component_id]
-    active = len(existing_same) == 0
+    new_active = len(existing_same) == 0
+
+    _LOGGER.info(
+        "add_repo: %s@%s, existing_same=%d, new_active=%s",
+        component_id, branch, len(existing_same), new_active,
+    )
 
     new_repo_cfg = {
         "repo": repo, "name": name,
         "component_id": component_id, "branch": branch,
-        "active": active,
+        "active": new_active,
     }
     current_repos.append(new_repo_cfg)
 
@@ -270,8 +291,6 @@ async def _do_add_repo(
             ed["async_add_entities"]([PrivateHacsUpdateEntity(coordinator, entry, new_repo_cfg)])
 
         await coordinator.async_request_refresh()
-
-    _LOGGER.info("Repo registered: %s@%s (%s) active=%s", component_id, branch, repo, active)
 
 
 async def _do_remove_repo(hass: HomeAssistant, component_id: str, branch: str) -> None:
@@ -320,19 +339,15 @@ async def _do_toggle_branch(
 ) -> None:
     """
     브랜치 활성/비활성 전환.
-
-    활성화(active=True) 시:
-      - 같은 component_id의 다른 브랜치는 모두 자동 비활성화
-      - coordinator 갱신 후 해당 브랜치 최신 버전 자동 설치
-
-    비활성화(active=False) 시:
-      - 상태만 변경, 파일은 그대로 유지
+    활성화 시: 같은 component_id의 다른 모든 브랜치를 비활성화 후 설치.
+    비활성화 시: 상태만 변경.
     """
     entry = _get_entry(hass)
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
 
-    current_repos: list[dict] = list(entry.data.get(CONF_REPOS, []))
+    # active 필드 정규화 후 처리
+    current_repos: list[dict] = _repos_with_active(list(entry.data.get(CONF_REPOS, [])))
     found = False
     new_repos = []
     for r in current_repos:
@@ -340,7 +355,7 @@ async def _do_toggle_branch(
             new_repos.append({**r, "active": active})
             found = True
         elif r["component_id"] == component_id and active:
-            # 같은 component_id의 다른 브랜치는 비활성화
+            # 같은 component_id의 다른 브랜치는 모두 비활성화
             new_repos.append({**r, "active": False})
         else:
             new_repos.append(r)
@@ -348,6 +363,7 @@ async def _do_toggle_branch(
     if not found:
         raise HomeAssistantError(f"'{component_id}@{branch}'를 찾을 수 없습니다.")
 
+    # config entry에 저장
     hass.config_entries.async_update_entry(
         entry, data={**entry.data, CONF_REPOS: new_repos}
     )
@@ -359,7 +375,7 @@ async def _do_toggle_branch(
     coordinator = ed["coordinator"]
     coordinator.repos = new_repos
 
-    # coordinator.data에 active 상태 즉시 반영 (모든 같은 component_id 브랜치)
+    # coordinator.data에 active 즉시 반영
     if coordinator.data:
         for r in new_repos:
             if r["component_id"] == component_id:
@@ -368,9 +384,12 @@ async def _do_toggle_branch(
                     coordinator.data[ek]["active"] = r["active"]
 
     coordinator.async_update_listeners()
-    _LOGGER.info("Branch %s@%s set active=%s", component_id, branch, active)
+    _LOGGER.info(
+        "Branch %s@%s set active=%s, siblings deactivated=%s",
+        component_id, branch, active, active,
+    )
 
-    # 활성화 시: coordinator 갱신 후 해당 브랜치 자동 설치
+    # 활성화 시: refresh 후 자동 설치
     if active:
         await coordinator.async_request_refresh()
         await _do_install(hass, component_id, branch, ref=None)
