@@ -628,9 +628,10 @@ function branchRowHTML(r) {
   const releaseLink = r.release_url
     ? '<a href="' + esc(r.release_url) + '" target="_blank" class="release-link">' + linkLabel + '</a>' : '';
 
-  // 토글 스위치
+  // 토글 스위치 — busy 중이면 disabled
   const toggleHtml = '<div class="toggle-wrap">'
     + '<label class="toggle"><input type="checkbox"' + (r.active ? ' checked' : '')
+    + (busy ? ' disabled' : '')
     + ' onchange="toggleBranch(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',this.checked)">'
     + '<span class="toggle-slider"></span></label>'
     + '</div>';
@@ -665,19 +666,45 @@ function esc(s) {
 
 // ── 브랜치 토글 ──
 async function toggleBranch(componentId, branch, active) {
-  try {
-    await callService('private_hacs', 'toggle_branch', {
-      component_id: componentId, branch, active,
-    });
-    // 로컬 상태 즉시 반영
-    const r = repos.find(r => r.component_id === componentId && r.branch === branch);
-    if (r) r.active = active;
+  const key = componentId + '@' + branch;
+  const r = repos.find(r => r.component_id === componentId && r.branch === branch);
+  const name = r ? r.name : componentId;
+
+  if (active) {
+    // 활성화: 서버에서 자동 설치까지 진행하므로 busy 처리
+    busyKeys.add(key);
+    // 로컬 상태 즉시 반영 (토글 ON 표시)
+    if (r) r.active = true;
     renderAll();
-    toast((active ? '✅ ' : '⏸ ') + componentId + '@' + branch + (active ? ' 활성화' : ' 비활성화'), 'info', 2500);
-  } catch (err) {
-    toast('토글 실패: ' + err.message, 'error');
-    // 실패 시 UI 되돌리기
-    renderRepos();
+    toast(name + ' (' + branch + ') 활성화 및 설치 중...', 'info', 8000);
+    try {
+      await callService('private_hacs', 'toggle_branch', {
+        component_id: componentId, branch, active: true,
+      });
+      toast(name + ' (' + branch + ') 설치 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
+      repos = await fetchRepos(); renderAll();
+    } catch (err) {
+      toast('활성화 실패: ' + err.message, 'error', 6000);
+      // 실패 시 로컬 상태 되돌리기
+      if (r) r.active = false;
+      renderAll();
+    } finally {
+      busyKeys.delete(key); renderRepos();
+    }
+  } else {
+    // 비활성화: 상태 변경만, 설치 없음
+    if (r) r.active = false;
+    renderAll();
+    try {
+      await callService('private_hacs', 'toggle_branch', {
+        component_id: componentId, branch, active: false,
+      });
+      toast(name + ' (' + branch + ') 비활성화됨', 'info', 2500);
+    } catch (err) {
+      toast('비활성화 실패: ' + err.message, 'error');
+      if (r) r.active = true;
+      renderAll();
+    }
   }
 }
 
