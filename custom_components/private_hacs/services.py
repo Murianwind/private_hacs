@@ -322,10 +322,8 @@ async def _do_toggle_branch(
     브랜치 활성/비활성 전환.
 
     활성화(active=True) 시:
-      - config entry와 coordinator에 active 상태 반영
+      - 같은 component_id의 다른 브랜치는 모두 자동 비활성화
       - coordinator 갱신 후 해당 브랜치 최신 버전 자동 설치
-        (릴리즈: 최신 태그, 커밋: 해당 브랜치 HEAD)
-      → "활성 브랜치 = 실제 설치된 파일" 항상 보장
 
     비활성화(active=False) 시:
       - 상태만 변경, 파일은 그대로 유지
@@ -341,6 +339,9 @@ async def _do_toggle_branch(
         if r["component_id"] == component_id and r.get("branch", "main") == branch:
             new_repos.append({**r, "active": active})
             found = True
+        elif r["component_id"] == component_id and active:
+            # 같은 component_id의 다른 브랜치는 비활성화
+            new_repos.append({**r, "active": False})
         else:
             new_repos.append(r)
 
@@ -357,11 +358,16 @@ async def _do_toggle_branch(
 
     coordinator = ed["coordinator"]
     coordinator.repos = new_repos
-    entry_key = make_entry_key(component_id, branch)
-    if coordinator.data and entry_key in coordinator.data:
-        coordinator.data[entry_key]["active"] = active
-    coordinator.async_update_listeners()
 
+    # coordinator.data에 active 상태 즉시 반영 (모든 같은 component_id 브랜치)
+    if coordinator.data:
+        for r in new_repos:
+            if r["component_id"] == component_id:
+                ek = make_entry_key(component_id, r.get("branch", "main"))
+                if ek in coordinator.data:
+                    coordinator.data[ek]["active"] = r["active"]
+
+    coordinator.async_update_listeners()
     _LOGGER.info("Branch %s@%s set active=%s", component_id, branch, active)
 
     # 활성화 시: coordinator 갱신 후 해당 브랜치 자동 설치
