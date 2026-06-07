@@ -58,7 +58,6 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         self._entry_id = entry.entry_id
 
         # repo_cfg의 active를 초기값으로 캐시
-        # coordinator.data가 아직 없을 때의 fallback으로 사용
         self._active_cache: bool = bool(repo_cfg.get("active", True))
 
         self.entity_id = f"update.{self._component_id}_{self._branch}_update"
@@ -105,18 +104,16 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
     def _is_active(self) -> bool:
         """
         active 상태 결정 우선순위:
-        1. coordinator.data에 entry_key가 있으면 그 값 사용
-        2. 없으면 생성 시 repo_cfg에서 받은 _active_cache 사용
+        1. coordinator.data에 값이 있으면 그 값 사용
+        2. 없으면 _active_cache(생성 시 repo_cfg 값) 사용
         """
         data = self._repo_data
         if data:
-            # coordinator.data에 값이 있으면 신뢰
             return bool(data.get("active", self._active_cache))
-        # coordinator.data 갱신 전 — 캐시 사용
         return self._active_cache
 
     def _handle_coordinator_update(self) -> None:
-        """coordinator 갱신 시 _active_cache도 동기화."""
+        """coordinator 갱신 시 _active_cache 동기화."""
         data = self._repo_data
         if data and "active" in data:
             self._active_cache = bool(data["active"])
@@ -124,8 +121,15 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def available(self) -> bool:
-        """비활성 브랜치는 unavailable로 표시."""
-        return self._is_active
+        """
+        항상 True를 반환.
+
+        비활성 브랜치를 unavailable로 만들면 HA가 attributes를 빈 dict로
+        반환하여 패널이 active=False를 읽지 못하는 문제가 발생함.
+        active 상태는 extra_state_attributes의 'active' 키로 노출하고,
+        패널이 이를 읽어 UI에서 비활성으로 표시함.
+        """
+        return True
 
     @property
     def installed_version(self) -> str | None:
@@ -133,6 +137,9 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def latest_version(self) -> str | None:
+        # 비활성 브랜치는 버전 불일치로 인한 업데이트 알림을 표시하지 않음
+        if not self._is_active:
+            return self._repo_data.get("installed_version")
         if not self._repo_data.get("has_update", False):
             return self._repo_data.get("installed_version")
         return self._latest.get("version")
@@ -169,7 +176,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         has_icon = os.path.exists(icon_path)
         return {
             "branch": self._branch,
-            "active": self._is_active,
+            "active": self._is_active,       # 항상 노출 — 패널이 이 값으로 활성/비활성 표시
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
