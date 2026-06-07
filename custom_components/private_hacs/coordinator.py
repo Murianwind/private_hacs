@@ -51,12 +51,26 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             active: bool = item.get("active", True)
             entry_key = make_entry_key(component_id, branch)
 
+            # 비활성 브랜치는 GitHub API 호출 스킵
+            # 단, 이전 데이터가 있으면 active만 갱신해서 유지
+            if not active:
+                prev = (self.data or {}).get(entry_key, {})
+                results[entry_key] = {**prev, "active": False,
+                                      "entry_key": entry_key,
+                                      "repo": repo,
+                                      "name": item.get("name", repo),
+                                      "component_id": component_id,
+                                      "branch": branch}
+                continue
+
             try:
                 repo_info = await self.github.get_repo_info(repo)
                 default_branch = (
                     repo_info.get("default_branch", branch) if repo_info else branch
                 )
-                latest = await self.github.resolve_latest(repo, component_id, default_branch)
+                # 릴리즈/태그 추적: 브랜치 무관하게 저장소의 최신 태그 사용
+                # 커밋 추적: 활성화된 해당 브랜치의 HEAD만 사용
+                latest = await self.github.resolve_latest(repo, component_id, branch)
             except Exception as err:
                 _LOGGER.warning("Failed to fetch version info for %s: %s", repo, err)
                 latest = None
