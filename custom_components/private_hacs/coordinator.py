@@ -1,196 +1,191 @@
-"""Update platform for Private HACS."""
+"""DataUpdateCoordinator for Private HACS."""
 from __future__ import annotations
 
+import json
 import logging
 import os
+from datetime import timedelta
 
-from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import CONF_REPOS, DOMAIN
-from .coordinator import PrivateHacsCoordinator, make_entry_key
+from .const import DEFAULT_SCAN_INTERVAL_HOURS, DOMAIN
+from .github import GitHubClient
+from .store import RepositoryStore
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_entry(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
-) -> None:
-    ed = hass.data[DOMAIN][entry.entry_id]
-    coordinator: PrivateHacsCoordinator = ed["coordinator"]
-
-    ed["async_add_entities"] = async_add_entities
-    ed.setdefault("update_entities", {})
-
-    repos: list[dict] = entry.data.get(CONF_REPOS, [])
-    async_add_entities(
-        PrivateHacsUpdateEntity(coordinator, entry, repo) for repo in repos
-    )
+def make_entry_key(component_id: str, branch: str) -> str:
+    """Return the internal dict key for a (component_id, branch) pair."""
+    return f"{component_id}@{branch}"
 
 
-class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateEntity):
-    """One update entity per (component_id, branch) pair."""
-
-    _attr_has_entity_name = False
-    _attr_auto_update = False
-    _attr_supported_features = (
-        UpdateEntityFeature.RELEASE_NOTES
-        | UpdateEntityFeature.SPECIFIC_VERSION
-        | UpdateEntityFeature.PROGRESS
-    )
+class PrivateHacsCoordinator(DataUpdateCoordinator):
+    """Polls GitHub for the latest version of every registered repository."""
 
     def __init__(
         self,
-        coordinator: PrivateHacsCoordinator,
-        entry: ConfigEntry,
-        repo_cfg: dict,
+        hass: HomeAssistant,
+        repos: list[dict],
+        github: GitHubClient,
+        store: RepositoryStore,
     ) -> None:
-        super().__init__(coordinator)
-        self._component_id: str = repo_cfg["component_id"]
-        self._branch: str = repo_cfg.get("branch", "main")
-        self._entry_key: str = make_entry_key(self._component_id, self._branch)
-        self._entry_id = entry.entry_id
-
-        # repo_cfg의 active를 초기값으로 캐시
-        self._active_cache: bool = bool(repo_cfg.get("active", True))
-
-        self.entity_id = f"update.{self._component_id}_{self._branch}_update"
-        self._attr_unique_id = f"repo_{self._component_id}_{self._branch}"
-        self._attr_name = f"{repo_cfg['name']} ({self._branch})"
-        self._attr_title = repo_cfg["name"]
-
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="Private HACS",
-            manufacturer="private-hacs",
-            model="Private Repository Manager",
-            entry_type=DeviceEntryType.SERVICE,
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=DOMAIN,
+            update_interval=timedelta(hours=DEFAULT_SCAN_INTERVAL_HOURS),
         )
+        self.repos = repos
+        self.github = github
+        self.store = store
 
-        coordinator.hass.data[DOMAIN][self._entry_id]["update_entities"][
-            self._entry_key
-        ] = self
+    async def _async_update_data(self) -> dict[str, dict]:
+        results: dict[str, dict] = {}
 
-    async def async_will_remove_from_hass(self) -> None:
-        await super().async_will_remove_from_hass()
-        entities = (
-            self.hass.data.get(DOMAIN, {})
-            .get(self._entry_id, {})
-            .get("update_entities", {})
-        )
-        entities.pop(self._entry_key, None)
+        for item in self.repos:
+            repo: str = item["repo"]
+            component_id: str = item["component_id"]
+            branch: str = item.get("branch", "main")
+            active: bool = item.get("active", True)
+            entry_key = make_entry_key(component_id, branch)
+
+            # 비활성 브랜치는 GitHub API 호출 스킵
+            # store에서 설치 정보만 읽어서 보존, active=False 명시
+            if not active:
+                prev = (self.data or {}).get(entry_key, {})
+                store_entry = self.store.get_branch(component_id, branch)
+                installed_version = self.store.installed_version(component_id, branch)
+                is_installed = await self._check_installed(component_id)
+                results[entry_key] = {
+                    **prev,
+                    "entry_key": entry_key,
+                    "repo": repo,
+                    "name": item.get("name", repo),
+                    "component_id": component_id,
+                    "branch": branch,
+                    "active": False,
+                    "installed_version": installed_version,
+                    "installed_commit_sha": store_entry.get("installed_commit_sha"),
+                    "is_installed": is_installed,
+                    "has_update": False,  # 비활성 브랜치는 업데이트 알림 없음
+                }
+                continue
+
+            try:
+                repo_info = await self.github.get_repo_info(repo)
+                default_branch = (
+                    repo_info.get("default_branch", branch) if repo_info else branch
+                )
+                # 릴리즈/태그 추적: 브랜치 무관하게 저장소의 최신 태그 사용
+                # 커밋 추적: 활성화된 해당 브랜치의 HEAD만 사용
+                latest = await self.github.resolve_latest(repo, component_id, branch)
+            except Exception as err:
+                _LOGGER.warning("Failed to fetch version info for %s: %s", repo, err)
+                latest = None
+
+            installed_version, version_source = await self._resolve_installed_version(
+                component_id, branch
+            )
+            store_entry = self.store.get_branch(component_id, branch)
+            installed_commit_sha = store_entry.get("installed_commit_sha")
+
+            if version_source == "manifest" and installed_version:
+                await self.store.async_set_branch(
+                    component_id, branch, {"installed_version": installed_version}
+                )
+                _LOGGER.info(
+                    "Auto-detected %s@%s v%s from manifest.json — persisted to store",
+                    component_id, branch, installed_version,
+                )
+                version_source = "store"
+
+            is_installed = await self._check_installed(component_id)
+            has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
+
+            results[entry_key] = {
+                "entry_key": entry_key,
+                "repo": repo,
+                "name": item.get("name", repo),
+                "component_id": component_id,
+                "branch": branch,
+                "active": active,
+                "latest": latest,
+                "installed_version": installed_version,
+                "installed_commit_sha": installed_commit_sha,
+                "is_installed": is_installed,
+                "version_source": version_source,
+                "has_update": has_update,
+            }
+
+        return results
 
     # ------------------------------------------------------------------
-    # Properties
+    # Update detection
     # ------------------------------------------------------------------
 
-    @property
-    def _repo_data(self) -> dict:
-        if self.coordinator.data is None:
-            return {}
-        return self.coordinator.data.get(self._entry_key) or {}
+    def _compute_has_update(
+        self,
+        latest: dict | None,
+        installed_version: str | None,
+        installed_commit_sha: str | None,
+    ) -> bool:
+        if not installed_version or latest is None:
+            return False
 
-    @property
-    def _latest(self) -> dict:
-        return self._repo_data.get("latest") or {}
+        latest_type = latest.get("type")
 
-    @property
-    def _is_active(self) -> bool:
-        """
-        active 상태 결정 우선순위:
-        1. coordinator.data에 값이 있으면 그 값 사용
-        2. 없으면 _active_cache(생성 시 repo_cfg 값) 사용
-        """
-        data = self._repo_data
-        if data:
-            return bool(data.get("active", self._active_cache))
-        return self._active_cache
+        if latest_type in ("release", "tag"):
+            return installed_version != latest.get("version")
 
-    def _handle_coordinator_update(self) -> None:
-        """coordinator 갱신 시 _active_cache 동기화."""
-        data = self._repo_data
-        if data and "active" in data:
-            self._active_cache = bool(data["active"])
-        super()._handle_coordinator_update()
+        if latest_type == "branch":
+            remote_manifest_version = latest.get("remote_manifest_version")
+            remote_commit_sha = latest.get("commit_sha")
 
-    @property
-    def available(self) -> bool:
-        """
-        항상 True를 반환.
+            if remote_manifest_version:
+                if remote_manifest_version != installed_version:
+                    return True
 
-        비활성 브랜치를 unavailable로 만들면 HA가 attributes를 빈 dict로
-        반환하여 패널이 active=False를 읽지 못하는 문제가 발생함.
-        active 상태는 extra_state_attributes의 'active' 키로 노출하고,
-        패널이 이를 읽어 UI에서 비활성으로 표시함.
-        """
-        return True
+            if remote_commit_sha and installed_commit_sha:
+                return remote_commit_sha != installed_commit_sha
 
-    @property
-    def installed_version(self) -> str | None:
-        return self._repo_data.get("installed_version")
-
-    @property
-    def latest_version(self) -> str | None:
-        # 비활성 브랜치는 버전 불일치로 인한 업데이트 알림을 표시하지 않음
-        if not self._is_active:
-            return self._repo_data.get("installed_version")
-        if not self._repo_data.get("has_update", False):
-            return self._repo_data.get("installed_version")
-        return self._latest.get("version")
-
-    @property
-    def release_url(self) -> str | None:
-        url = self._latest.get("release_url")
-        if url:
-            return url
-        repo = self._repo_data.get("repo")
-        branch = self._repo_data.get("branch", self._branch)
-        if repo:
-            return f"https://github.com/{repo}/commits/{branch}"
-        return None
-
-    @property
-    def release_summary(self) -> str | None:
-        return self._latest.get("release_summary")
-
-    @property
-    def in_progress(self) -> bool:
         return False
 
-    @property
-    def update_percentage(self) -> int | None:
-        return None
+    # ------------------------------------------------------------------
+    # Installed version resolution (store → manifest on disk)
+    # ------------------------------------------------------------------
 
-    @property
-    def extra_state_attributes(self) -> dict:
-        latest = self._latest
-        icon_path = self.hass.config.path(
-            "custom_components", self._component_id, "brand", "icon.png"
+    async def _resolve_installed_version(
+        self, component_id: str, branch: str
+    ) -> tuple[str | None, str]:
+        stored = self.store.installed_version(component_id, branch)
+        if stored:
+            return stored, "store"
+
+        manifest_version = await self.hass.async_add_executor_job(
+            self._read_manifest_version_sync, component_id
         )
-        has_icon = os.path.exists(icon_path)
-        return {
-            "branch": self._branch,
-            "active": self._is_active,       # 항상 노출 — 패널이 이 값으로 활성/비활성 표시
-            "version_source": self._repo_data.get("version_source", "none"),
-            "latest_type": latest.get("type"),
-            "remote_commit_sha": latest.get("commit_sha"),
-            "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
-            "has_icon": has_icon,
-        }
+        if manifest_version:
+            return manifest_version, "manifest"
 
-    async def async_release_notes(self) -> str | None:
-        return self.release_summary
+        return None, "none"
 
-    async def async_install(self, version: str | None, backup: bool, **kwargs) -> None:
-        await self.hass.services.async_call(
-            DOMAIN,
-            "install",
-            {"component_id": self._component_id, "branch": self._branch},
-            blocking=True,
+    def _read_manifest_version_sync(self, component_id: str) -> str | None:
+        path = self.hass.config.path(
+            "custom_components", component_id, "manifest.json"
         )
+        if not os.path.isfile(path):
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            version = data.get("version")
+            return str(version) if version else None
+        except Exception as err:
+            _LOGGER.debug("Could not read manifest.json for %s: %s", component_id, err)
+            return None
+
+    async def _check_installed(self, component_id: str) -> bool:
+        path = self.hass.config.path("custom_components", component_id)
+        return await self.hass.async_add_executor_job(os.path.isdir, path)
