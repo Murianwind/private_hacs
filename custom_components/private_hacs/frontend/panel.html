@@ -511,7 +511,12 @@ async function fetchRepos() {
       const installed = a.installed_version || null;
       const latest = a.latest_version || null;
       const hasUpdate = s.state === 'on';
-      const active = a.active !== undefined ? a.active : true;
+      // active: 엔티티 attributes에서 읽음
+      // available=True로 고정했으므로 a.active가 항상 정확히 전달됨
+      // unavailable 상태(a가 비어있는 경우) 대비해 명시적으로 false 기본값 사용
+      const active = (s.state !== 'unavailable' && a.active !== undefined)
+        ? Boolean(a.active)
+        : (s.state !== 'unavailable');
 
       const rawName = a.friendly_name || s.entity_id;
       let cleanName = rawName.replace(/ update$/i, '').replace(/ \([^)]+\)$/, '');
