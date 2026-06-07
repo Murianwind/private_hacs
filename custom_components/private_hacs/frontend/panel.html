@@ -465,32 +465,47 @@ async function fetchRepos() {
   const states = statesRes.result || [];
   const reg = regRes.result || [];
 
-  // private_hacs 플랫폼 엔티티 id 목록
-  const privateHacsEntityIds = new Set(
-    reg.filter(e => e.platform === 'private_hacs').map(e => e.entity_id)
-  );
+  // private_hacs 플랫폼 엔티티 id → unique_id 매핑
+  const hacsEntities = {};
+  reg.filter(e => e.platform === 'private_hacs').forEach(e => {
+    hacsEntities[e.entity_id] = e.unique_id || '';
+  });
 
   return states
-    .filter(s => s.entity_id.startsWith('update.') && privateHacsEntityIds.has(s.entity_id))
-    .filter(s => {
-      // branch 속성이 없는 레거시 엔티티는 제외 (정체불명 항목 방지)
-      return s.attributes && s.attributes.branch !== undefined;
-    })
+    .filter(s => s.entity_id.startsWith('update.') && hacsEntities[s.entity_id] !== undefined)
     .map(s => {
       const a = s.attributes;
-      // branch와 component_id를 엔티티 속성에서 직접 읽음
-      const branch = a.branch || 'main';
-      // entity_id에서 component_id 추출: update.{component_id}_{branch}_update
-      // 가장 신뢰할 수 있는 소스는 속성의 branch를 알고 있을 때 entity_id에서 역산
-      // entity_id 형식: update.{component_id}_{branch}_update
-      let component_id = s.entity_id
-        .replace(/^update\./, '')
-        .replace(/_update$/, '');
-      // 끝에서 _{branch} 제거
-      const branchSuffix = '_' + branch;
-      if (component_id.endsWith(branchSuffix)) {
-        component_id = component_id.slice(0, -branchSuffix.length);
+
+      // branch: extra_state_attributes에서 직접 읽는 것이 가장 정확
+      // 없으면 unique_id(repo_{component_id}_{branch})에서 추출 시도
+      let branch = a.branch;
+      let component_id;
+
+      const uid = hacsEntities[s.entity_id];
+
+      if (branch) {
+        // branch 속성이 있으면 entity_id에서 역산
+        component_id = s.entity_id
+          .replace(/^update\./, '')
+          .replace(/_update$/, '');
+        const suffix = '_' + branch;
+        if (component_id.endsWith(suffix)) {
+          component_id = component_id.slice(0, -suffix.length);
+        }
+      } else {
+        // branch 속성이 없는 경우 — unique_id에서 추출
+        // 신형 unique_id만 허용: repo_{component_id}_{branch}
+        // component_id에 _가 포함될 수 있으므로 branch가 확실히 존재할 때만 파싱
+        // __init__.py의 cleanup이 실행되기 전 레거시(repo_{component_id}) 엔티티를 여기서도 걸러냄
+        if (!uid.startsWith('repo_') || uid.split('_').length < 3) return null;
+        // 마지막 _ 이후가 branch
+        const lastUnderscore = uid.lastIndexOf('_');
+        branch = uid.slice(lastUnderscore + 1);
+        component_id = uid.slice('repo_'.length, lastUnderscore);
+        if (!branch || !component_id) return null;
       }
+
+      if (!component_id || !branch) return null;
 
       const entry_key = component_id + '@' + branch;
       const installed = a.installed_version || null;
@@ -504,8 +519,8 @@ async function fetchRepos() {
 
       let repoUrl = '';
       if (a.release_url) {
-        const m = a.release_url.match(/github\.com\/([^\/]+\/[^\/]+)/);
-        if (m) repoUrl = m[1].replace(/\/(tree|releases|commits).*$/, '');
+        const m2 = a.release_url.match(/github\.com\/([^\/]+\/[^\/]+)/);
+        if (m2) repoUrl = m2[1].replace(/\/(tree|releases|commits).*$/, '');
       }
 
       return {
@@ -519,7 +534,8 @@ async function fetchRepos() {
         latest_type: a.latest_type || null,
         has_icon: a.has_icon || false,
       };
-    });
+    })
+    .filter(Boolean); // null 제거
 }
 
 async function loadData() {
@@ -671,10 +687,13 @@ async function toggleBranch(componentId, branch, active) {
   const name = r ? r.name : componentId;
 
   if (active) {
-    // 활성화: 서버에서 자동 설치까지 진행하므로 busy 처리
+    // 활성화: 같은 component_id의 다른 브랜치 로컬에서 즉시 비활성화
+    repos.forEach(repo => {
+      if (repo.component_id === componentId) {
+        repo.active = repo.branch === branch;
+      }
+    });
     busyKeys.add(key);
-    // 로컬 상태 즉시 반영 (토글 ON 표시)
-    if (r) r.active = true;
     renderAll();
     toast(name + ' (' + branch + ') 활성화 및 설치 중...', 'info', 8000);
     try {
@@ -685,14 +704,12 @@ async function toggleBranch(componentId, branch, active) {
       repos = await fetchRepos(); renderAll();
     } catch (err) {
       toast('활성화 실패: ' + err.message, 'error', 6000);
-      // 실패 시 로컬 상태 되돌리기
-      if (r) r.active = false;
-      renderAll();
+      repos = await fetchRepos(); renderAll();
     } finally {
       busyKeys.delete(key); renderRepos();
     }
   } else {
-    // 비활성화: 상태 변경만, 설치 없음
+    // 비활성화: 상태 변경만
     if (r) r.active = false;
     renderAll();
     try {
@@ -818,7 +835,6 @@ function openAddModal() {
   $el('addModal').classList.add('open');
   setTimeout(() => { const el = $el('addRepo'); if (el) el.focus(); }, 50);
 }
-function closeAddModal() { $el('addModal').classList.remove('open'); _pendingRepoInfo = null; }
 
 function handleRepoInput(e) {
   const repo = _parseRepoInput(e.target.value);
@@ -871,13 +887,25 @@ async function submitAddRepo() {
   try {
     await callService('private_hacs', 'add_repo', { repo, name, component_id, branch });
     closeAddModal();
-    toast(name + ' (' + branch + ') 저장소가 추가됐습니다.', 'success', 5000);
-    await new Promise(r => setTimeout(r, 3000));
+    toast(name + ' (' + branch + ') 저장소가 추가됐습니다. 잠시 후 목록에 표시됩니다.', 'success', 6000);
+    await new Promise(r => setTimeout(r, 5000));
     repos = await fetchRepos(); renderAll();
   } catch (err) {
     toast('저장소 추가 실패: ' + err.message, 'error', 6000);
     btn.disabled = false; btn.textContent = '추가';
   }
+}
+
+function closeAddModal() {
+  $el('addModal').classList.remove('open');
+  _pendingRepoInfo = null;
+  // 버튼 상태 항상 리셋
+  const btn = $el('addSubmitBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '추가'; }
+  const inp = $el('addRepo');
+  if (inp) inp.value = '';
+  const prev = $el('repoPreview');
+  if (prev) prev.classList.remove('visible');
 }
 
 // ── Confirm / Toast ──
