@@ -61,8 +61,8 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         self._active_cache: bool = bool(repo_cfg.get("active", True))
 
         # has_icon은 파일 존재 여부 — 변경 빈도가 낮으므로 캐시
-        # None이면 아직 확인 안 됨, 다음 _handle_coordinator_update에서 갱신
-        self._has_icon_cache: bool | None = None
+        # coordinator 갱신(_handle_coordinator_update) 시에만 갱신
+        self._has_icon_cache: bool = False
 
         self.entity_id = f"update.{self._component_id}_{self._branch}_update"
         self._attr_unique_id = f"repo_{self._component_id}_{self._branch}"
@@ -192,12 +192,6 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
     @property
     def extra_state_attributes(self) -> dict:
         latest = self._latest
-        # has_icon: 캐시 사용 (None이면 초기 상태 — 일단 파일 확인)
-        if self._has_icon_cache is None:
-            icon_path = self.hass.config.path(
-                "custom_components", self._component_id, "brand", "icon.png"
-            )
-            self._has_icon_cache = os.path.exists(icon_path)
         return {
             "branch": self._branch,
             "active": self._is_active,
