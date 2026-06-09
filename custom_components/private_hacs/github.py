@@ -44,6 +44,15 @@ class GitHubClient:
             _LOGGER.debug("get_repo_info %s → %s", repo, resp.status)
             return None
 
+    async def get_branches(self, repo: str) -> list[str]:
+        """Return list of branch names for the repo."""
+        url = f"{_GITHUB_API}/repos/{repo}/branches?per_page=100"
+        async with self._session.get(url, headers=self._headers()) as resp:
+            if resp.status != 200:
+                return []
+            data = await resp.json()
+            return [b["name"] for b in data if isinstance(b, dict) and "name" in b]
+
     async def get_contents(self, repo: str, path: str = "") -> list | dict | None:
         url = f"{_GITHUB_API}/repos/{repo}/contents/{path}"
         async with self._session.get(url, headers=self._headers()) as resp:
