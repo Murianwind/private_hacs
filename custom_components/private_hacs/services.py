@@ -417,12 +417,19 @@ async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
     except Exception as err:
         _LOGGER.debug("Could not list custom_components for %s: %s", repo, err)
 
+    branches: list[str] = []
+    try:
+        branches = await github.get_branches(repo)
+    except Exception as err:
+        _LOGGER.debug("Could not list branches for %s: %s", repo, err)
+
     return {
         "name": repo_info.get("name", repo.split("/")[1]),
         "description": repo_info.get("description") or "",
         "default_branch": repo_info.get("default_branch", "main"),
         "full_name": repo_info.get("full_name", repo),
         "component_ids": component_ids,
+        "branches": branches,
     }
 
 
