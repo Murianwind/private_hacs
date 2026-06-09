@@ -41,7 +41,12 @@ class GitHubClient:
         async with self._session.get(url, headers=self._headers()) as resp:
             if resp.status == 200:
                 return await resp.json()
-            _LOGGER.debug("get_repo_info %s → %s", repo, resp.status)
+            elif resp.status == 401:
+                _LOGGER.warning("get_repo_info %s — 인증 실패(401). 토큰을 확인하세요.", repo)
+            elif resp.status == 403:
+                _LOGGER.warning("get_repo_info %s — 접근 거부(403). 토큰 권한을 확인하세요.", repo)
+            else:
+                _LOGGER.debug("get_repo_info %s → %s", repo, resp.status)
             return None
 
     async def get_branches(self, repo: str) -> list[str]:
@@ -68,6 +73,10 @@ class GitHubClient:
                 data = await resp.json()
                 if data.get("encoding") == "base64":
                     return base64.b64decode(data["content"]).decode("utf-8")
+            elif resp.status == 401:
+                _LOGGER.warning("get_readme %s — 인증 실패(401). 토큰을 확인하세요.", repo)
+            elif resp.status == 403:
+                _LOGGER.warning("get_readme %s — 접근 거부(403). 토큰 권한을 확인하세요.", repo)
             elif resp.status != 404:
                 _LOGGER.debug("get_readme %s → %s", repo, resp.status)
             return None
@@ -120,6 +129,13 @@ class GitHubClient:
                     "commit_sha": None,
                     "remote_manifest_version": None,
                 }
+            elif resp.status == 403:
+                _LOGGER.warning("resolve_latest %s — API Rate Limit 또는 접근 거부(403).", repo)
+                return None
+            elif resp.status == 401:
+                _LOGGER.warning("resolve_latest %s — 인증 실패(401). 토큰을 확인하세요.", repo)
+                return None
+            # 404: 릴리즈 없음 → 다음 단계로
 
         # 2. Tag
         url = f"{_GITHUB_API}/repos/{repo}/tags"
@@ -137,6 +153,10 @@ class GitHubClient:
                         "commit_sha": None,
                         "remote_manifest_version": None,
                     }
+            elif resp.status in (401, 403):
+                _LOGGER.warning("resolve_latest(tags) %s → %s", repo, resp.status)
+                return None
+            # 태그 없음 → 다음 단계로
 
         # 3. Branch HEAD
         url = f"{_GITHUB_API}/repos/{repo}/branches/{branch}"
