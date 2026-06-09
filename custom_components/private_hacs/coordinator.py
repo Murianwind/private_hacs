@@ -51,13 +51,23 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             active: bool = item.get("active", True)
             entry_key = make_entry_key(component_id, branch)
 
-            # 비활성 브랜치는 GitHub API 호출 스킵
-            # store에서 설치 정보만 읽어서 보존, active=False 명시
+            # 비활성 브랜치는 GitHub API 호출 최소화
+            # prev(이전 coordinator 데이터)에 latest가 있으면 재사용, 없으면 1회 조회
             if not active:
                 prev = (self.data or {}).get(entry_key, {})
                 store_entry = self.store.get_branch(component_id, branch)
                 installed_version = self.store.installed_version(component_id, branch)
                 is_installed = await self._check_installed(component_id)
+
+                latest = prev.get("latest")
+                if latest is None:
+                    # 최초 1회: latest_type 등 메타 정보를 위해 조회
+                    try:
+                        latest = await self.github.resolve_latest(repo, component_id, branch)
+                    except Exception as err:
+                        _LOGGER.debug("Failed to fetch latest for inactive %s: %s", repo, err)
+                        latest = None
+
                 results[entry_key] = {
                     **prev,
                     "entry_key": entry_key,
@@ -66,10 +76,11 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                     "component_id": component_id,
                     "branch": branch,
                     "active": False,
+                    "latest": latest,
                     "installed_version": installed_version,
                     "installed_commit_sha": store_entry.get("installed_commit_sha"),
                     "is_installed": is_installed,
-                    "has_update": False,  # 비활성 브랜치는 업데이트 알림 없음
+                    "has_update": False,
                 }
                 continue
 
