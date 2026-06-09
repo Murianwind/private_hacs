@@ -145,7 +145,12 @@
   }
   .branch-row:last-child { border-bottom: none; }
   .branch-row.inactive { opacity: .5; }
-  .branch-row.inactive .branch-actions { pointer-events: none; }
+  /* 비활성 브랜치: 설치/업데이트 관련 버튼만 비활성화, 토글·등록해제는 허용 */
+  .branch-row.inactive .branch-actions .btn-success,
+  .branch-row.inactive .branch-actions .btn-warning,
+  .branch-row.inactive .branch-actions .btn-ghost:not(.btn-remove) {
+    pointer-events: none; opacity: .4;
+  }
 
   .branch-label {
     display: flex; align-items: center; gap: 6px;
@@ -197,6 +202,21 @@
   .badge-manifest   { background: rgba(124,77,255,.15); color: #9c7ae8; }
   .release-link { font-size: 13px; font-weight: 500; color: var(--primary); text-decoration: none; }
   .release-link:hover { text-decoration: underline; }
+  .readme-link {
+    font-size: 11px; font-weight: 500;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    text-decoration: none;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .readme-link:hover {
+    color: var(--primary);
+    border-color: var(--primary);
+    background: rgba(3,169,244,.08);
+  }
 
   /* ── Loading / empty ── */
   .loading { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
@@ -275,6 +295,48 @@
   .repo-preview-name { font-weight: 600; margin-bottom: 4px; color: #e5e5ea; color: var(--primary-text-color, #e5e5ea); font-size: 14px; }
   .repo-preview-desc { color: #98989f; color: var(--secondary-text-color, #98989f); }
   .repo-preview-component { color: var(--primary); font-size: 13px; margin-top: 6px; }
+
+  /* 브랜치 선택 목록 */
+  .branch-select-list {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 200px; overflow-y: auto;
+    margin-top: 6px;
+  }
+  .branch-select-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px;
+    background: #1c1c1e; background: var(--secondary-background-color, #1c1c1e);
+    border: 1px solid #3a3a3c; border: 1px solid var(--divider-color, #3a3a3c);
+    border-radius: var(--radius-sm);
+    cursor: pointer; transition: border-color .15s, background .15s;
+    font-size: 13px;
+  }
+  .branch-select-item:hover { border-color: var(--primary); background: #2c2c2e; background: var(--surface2, #2c2c2e); }
+  .branch-select-item.selected { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
+  .branch-select-item.already-registered {
+    opacity: .45; cursor: not-allowed;
+  }
+  .branch-select-item.already-registered:hover { border-color: #3a3a3c; border-color: var(--divider-color, #3a3a3c); background: #1c1c1e; background: var(--secondary-background-color, #1c1c1e); }
+  .branch-item-radio {
+    width: 14px; height: 14px; flex-shrink: 0;
+    border: 2px solid #555; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .branch-select-item.selected .branch-item-radio { border-color: var(--primary); }
+  .branch-select-item.selected .branch-item-radio::after {
+    content: ''; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--primary); display: block;
+  }
+  .branch-item-name {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 13px; font-weight: 600; color: var(--primary); flex: 1;
+  }
+  .branch-item-tag {
+    font-size: 11px; padding: 1px 6px; border-radius: 10px;
+    background: rgba(76,175,80,.15); color: var(--success);
+  }
+  .branch-loading { text-align: center; padding: 16px 0; color: #98989f; font-size: 13px; }
+  .branch-loading .spinner { width: 20px; height: 20px; border-width: 2px; margin: 0 auto 8px; }
 
   /* README */
   .readme-content { flex: 1; overflow-y: auto; background: #0d1117; border: 1px solid #30363d; border-radius: var(--radius-sm); padding: 24px; color: #c9d1d9; font-size: 14px; line-height: 1.6; }
@@ -371,9 +433,9 @@
         <div class="repo-preview-component" id="previewComponent"></div>
       </div>
     </div>
-    <div class="modal-field">
-      <label>브랜치 <span style="color:#98989f">(기본값: main)</span></label>
-      <input id="addBranch" placeholder="main" value="main" autocomplete="off">
+    <div class="modal-field" id="branchField" style="display:none">
+      <label>브랜치 선택</label>
+      <div class="branch-select-list" id="branchSelectList"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeAddModal()">취소</button>
@@ -613,16 +675,29 @@ function groupHTML(componentId, branches) {
   const iconContent = first.has_icon
     ? '<img src="/private_hacs_icons/' + componentId + '/brand/icon.png" onerror="this.outerHTML=\'🧩\'">'
     : '🧩';
-  const clickHandler = first.repo_url
-    ? 'onclick="openReadmeModal(\'' + esc(first.repo_url) + '\',\'' + esc(first.name) + '\')"' : '';
+
+  // 아이콘/제목 클릭 → GitHub 저장소로 이동
+  const repoHref = first.repo_url ? 'https://github.com/' + first.repo_url : null;
+  const iconClick = repoHref
+    ? 'onclick="window.open(\'' + esc(repoHref) + '\',\'_blank\')" style="cursor:pointer"' : '';
+  const titleClick = repoHref
+    ? 'onclick="window.open(\'' + esc(repoHref) + '\',\'_blank\')" style="cursor:pointer"' : '';
+
+  // README 링크 — 제목 옆 작은 버튼
+  const readmeLink = first.repo_url
+    ? '<a href="javascript:void(0)" onclick="openReadmeModal(\'' + esc(first.repo_url) + '\',\'' + esc(first.name) + '\')" class="readme-link" title="README 보기">README</a>'
+    : '';
 
   const branchRows = branches.map(r => branchRowHTML(r)).join('');
 
   return '<div class="repo-group' + (hasAnyUpdate ? ' has-update' : '') + '">'
     + '<div class="group-header">'
-    + '<div class="group-icon" ' + clickHandler + '>' + iconContent + '</div>'
+    + '<div class="group-icon" ' + iconClick + '>' + iconContent + '</div>'
     + '<div style="flex:1;min-width:0;">'
-    + '<div class="group-title" ' + clickHandler + '>' + esc(first.name) + '</div>'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    + '<div class="group-title" ' + titleClick + '>' + esc(first.name) + '</div>'
+    + readmeLink
+    + '</div>'
     + '<div class="group-component-id">' + esc(componentId) + '</div>'
     + '</div>'
     + '</div>'
@@ -649,10 +724,16 @@ function branchRowHTML(r) {
   const releaseLink = r.release_url
     ? '<a href="' + esc(r.release_url) + '" target="_blank" class="release-link">' + linkLabel + '</a>' : '';
 
-  // 토글 스위치 — busy 중이면 disabled
+  // 같은 component_id 브랜치가 1개뿐이면 토글 비활성화
+  const isSingleBranch = repos.filter(repo => repo.component_id === r.component_id).length <= 1;
+  const toggleDisabled = busy || isSingleBranch;
+
+  // 토글 스위치
   const toggleHtml = '<div class="toggle-wrap">'
-    + '<label class="toggle"><input type="checkbox"' + (r.active ? ' checked' : '')
-    + (busy ? ' disabled' : '')
+    + '<label class="toggle"'
+    + (isSingleBranch ? ' title="브랜치가 하나뿐인 저장소는 비활성화할 수 없습니다"' : '')
+    + '><input type="checkbox"' + (r.active ? ' checked' : '')
+    + (toggleDisabled ? ' disabled' : '')
     + ' onchange="toggleBranch(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',this.checked)">'
     + '<span class="toggle-slider"></span></label>'
     + '</div>';
@@ -662,15 +743,15 @@ function branchRowHTML(r) {
     actions = '<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>';
   } else if (!r.is_installed) {
     actions = '<button class="btn btn-success btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬇ 설치</button>'
-      + '<button class="btn btn-danger btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
+      + '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else if (r.has_update) {
     actions = '<button class="btn btn-warning btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬆ 업데이트</button>'
       + '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>'
-      + '<button class="btn btn-ghost btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
+      + '<button class="btn btn-ghost btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else {
     actions = '<button class="btn btn-ghost btn-sm" onclick="reinstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">🔄 재설치</button>'
       + '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>'
-      + '<button class="btn btn-ghost btn-sm" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
+      + '<button class="btn btn-ghost btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   }
 
   return '<div class="branch-row' + (inactive ? ' inactive' : '') + '">'
@@ -691,70 +772,15 @@ async function toggleBranch(componentId, branch, active) {
   const r = repos.find(r => r.component_id === componentId && r.branch === branch);
   const name = r ? r.name : componentId;
 
-  if (active) {
-    // 활성화: 같은 component_id의 다른 브랜치 로컬에서 즉시 비활성화
-    repos.forEach(repo => {
-      if (repo.component_id === componentId) {
-        repo.active = repo.branch === branch;
-      }
-    });
-    busyKeys.add(key);
-    renderAll();
-    toast(name + ' (' + branch + ') 활성화 중...', 'info', 4000);
-
-    try {
-      // 1단계: 활성화 상태 저장 (설치 없이)
-      await callService('private_hacs', 'toggle_branch', {
-        component_id: componentId, branch, active: true,
-      });
-
-      // 서버 refresh 후 최신 상태 반영
-      await new Promise(res => setTimeout(res, 1500));
-      repos = await fetchRepos();
-      busyKeys.delete(key);
-      renderAll();
-
-      // 2단계: 커밋 기반 저장소(branch 타입)면 설치 여부 물어봄
-      const updated = repos.find(r => r.component_id === componentId && r.branch === branch);
-      const isBranchType = updated && updated.latest_type === 'branch';
-
-      if (isBranchType) {
-        showConfirm(
-          '브랜치 설치',
-          name + ' (' + branch + ') 브랜치로 전환하시겠습니까?\n\n지금 설치하면 해당 브랜치의 최신 커밋으로 파일이 교체됩니다.\n설치 후 HA를 재시작해야 적용됩니다.\n\n취소하면 활성화만 되고 나중에 수동으로 설치할 수 있습니다.',
-          async () => {
-            // 확인: 설치 진행
-            busyKeys.add(key); renderRepos();
-            toast(name + ' (' + branch + ') 설치 중...', 'info');
-            try {
-              await callService('private_hacs', 'install', { component_id: componentId, branch });
-              toast(name + ' (' + branch + ') 설치 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
-              repos = await fetchRepos(); renderAll();
-            } catch (err) {
-              toast('설치 실패: ' + err.message, 'error', 6000);
-            } finally {
-              busyKeys.delete(key); renderRepos();
-            }
-          }
-          // 취소: 활성화는 이미 됐고 업데이트 상태로 표시됨 (아무것도 안 함)
-        );
-      } else {
-        // 릴리즈/태그 타입: 업데이트 여부에 따라 토스트만 표시
-        if (updated && updated.has_update) {
-          toast(name + ' (' + branch + ') 활성화됨. 업데이트가 있습니다.', 'success', 5000);
-        } else {
-          toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
-        }
-      }
-    } catch (err) {
-      toast('활성화 실패: ' + err.message, 'error', 6000);
-      // 실패 시 로컬 상태 복원
-      repos = await fetchRepos(); renderAll();
-    } finally {
-      busyKeys.delete(key);
+  if (!active) {
+    // 비활성화: 같은 component_id 브랜치가 1개뿐이면 차단
+    const siblings = repos.filter(r => r.component_id === componentId);
+    if (siblings.length <= 1) {
+      toast('브랜치가 하나뿐인 저장소는 비활성화할 수 없습니다.', 'warning', 4000);
+      // 체크박스 UI 원래대로 복원
       renderRepos();
+      return;
     }
-  } else {
     // 비활성화: 상태 변경만
     if (r) r.active = false;
     renderAll();
@@ -768,6 +794,69 @@ async function toggleBranch(componentId, branch, active) {
       if (r) r.active = true;
       renderAll();
     }
+    return;
+  }
+
+  // 활성화: 같은 component_id의 다른 브랜치 로컬에서 즉시 비활성화
+  repos.forEach(repo => {
+    if (repo.component_id === componentId) {
+      repo.active = repo.branch === branch;
+    }
+  });
+  busyKeys.add(key);
+  renderAll();
+  toast(name + ' (' + branch + ') 활성화 중...', 'info', 4000);
+
+  try {
+    // 1단계: 활성화 상태 저장 (설치 없이)
+    await callService('private_hacs', 'toggle_branch', {
+      component_id: componentId, branch, active: true,
+    });
+
+    // 서버 refresh 후 최신 상태 반영
+    await new Promise(res => setTimeout(res, 1500));
+    repos = await fetchRepos();
+    busyKeys.delete(key);
+    renderAll();
+
+    // 2단계: 커밋 기반 저장소(branch 타입)이고 업데이트가 있을 때만 팝업
+    const updated = repos.find(r => r.component_id === componentId && r.branch === branch);
+    const isBranchType = updated && updated.latest_type === 'branch';
+    const needsInstall = isBranchType && updated.has_update;
+
+    if (needsInstall) {
+      showConfirm(
+        '브랜치 설치',
+        name + ' (' + branch + ') 브랜치로 전환하시겠습니까?\n\n현재 설치된 파일과 다른 커밋입니다.\n지금 설치하면 해당 브랜치의 최신 커밋으로 파일이 교체됩니다.\n설치 후 HA를 재시작해야 적용됩니다.\n\n취소하면 활성화만 되고 나중에 수동으로 설치할 수 있습니다.',
+        async () => {
+          busyKeys.add(key); renderRepos();
+          toast(name + ' (' + branch + ') 설치 중...', 'info');
+          try {
+            await callService('private_hacs', 'install', { component_id: componentId, branch });
+            toast(name + ' (' + branch + ') 설치 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
+            repos = await fetchRepos(); renderAll();
+          } catch (err) {
+            toast('설치 실패: ' + err.message, 'error', 6000);
+          } finally {
+            busyKeys.delete(key); renderRepos();
+          }
+        }
+        // 취소: 활성화만 된 상태, 업데이트 버튼으로 표시됨
+      );
+    } else {
+      // 최신 커밋과 일치하거나 릴리즈/태그 타입 — 팝업 없이 활성화 완료
+      if (updated && updated.has_update) {
+        toast(name + ' (' + branch + ') 활성화됨. 업데이트가 있습니다.', 'success', 5000);
+      } else {
+        toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
+      }
+    }
+  } catch (err) {
+    toast('활성화 실패: ' + err.message, 'error', 6000);
+    repos = await fetchRepos(); renderAll();
+  } finally {
+    busyKeys.delete(key);
+    renderRepos();
   }
 }
 
@@ -811,8 +900,20 @@ async function uninstall(componentId, branch, name) {
 }
 
 async function removeRepo(componentId, branch, name) {
-  showConfirm('저장소 등록 해제',
-    name + ' (' + branch + ') 브랜치를 Private HACS에서 제거하시겠습니까?\n\n설치된 파일은 자동으로 삭제되지 않습니다.',
+  const r = repos.find(r => r.component_id === componentId && r.branch === branch);
+  const isActive = r && r.active;
+  const siblings = repos.filter(r => r.component_id === componentId && r.branch !== branch);
+  const hasSiblings = siblings.length > 0;
+
+  let confirmMsg = name + ' (' + branch + ') 브랜치를 Private HACS에서 제거하시겠습니까?\n\n설치된 파일은 자동으로 삭제되지 않습니다.';
+
+  if (isActive && hasSiblings) {
+    confirmMsg += '\n\n⚠️ 현재 활성화된 브랜치입니다.\n등록 해제 후 다른 브랜치를 직접 활성화해야 합니다.';
+  } else if (isActive && !hasSiblings) {
+    confirmMsg += '\n\n⚠️ 현재 활성화된 브랜치이며 다른 등록된 브랜치가 없습니다.\n등록 해제 후 활성 브랜치가 없는 상태가 됩니다.';
+  }
+
+  showConfirm('저장소 등록 해제', confirmMsg,
     async () => {
       try {
         await callService('private_hacs', 'remove_repo', { component_id: componentId, branch });
@@ -875,8 +976,9 @@ function _parseRepoInput(val) {
 function openAddModal() {
   _pendingRepoInfo = null;
   $el('addRepo').value = '';
-  $el('addBranch').value = 'main';
   $el('repoPreview').classList.remove('visible');
+  $el('branchField').style.display = 'none';
+  $el('branchSelectList').innerHTML = '';
   $el('addSubmitBtn').disabled = true;
   $el('addModal').classList.add('open');
   setTimeout(() => { const el = $el('addRepo'); if (el) el.focus(); }, 50);
@@ -885,6 +987,8 @@ function openAddModal() {
 function handleRepoInput(e) {
   const repo = _parseRepoInput(e.target.value);
   $el('repoPreview').classList.remove('visible');
+  $el('branchField').style.display = 'none';
+  $el('branchSelectList').innerHTML = '';
   $el('addSubmitBtn').disabled = true;
   _pendingRepoInfo = null;
   clearTimeout(_repoLookupTimer);
@@ -897,8 +1001,10 @@ async function lookupRepo(repo) {
   $el('previewName').textContent = '조회 중...';
   $el('previewDesc').textContent = '';
   $el('previewComponent').textContent = '';
+  $el('branchField').style.display = 'none';
   $el('addSubmitBtn').disabled = true;
   _pendingRepoInfo = null;
+
   try {
     const res = await wsSend({
       type: 'call_service', domain: 'private_hacs', service: 'get_repo_info',
@@ -908,26 +1014,73 @@ async function lookupRepo(repo) {
     const info = (res.result && res.result.response) || res.response || {};
     const componentIds = info.component_ids || [];
     const componentId = componentIds.length ? componentIds[0] : repo.split('/')[1].replace(/-/g,'_').toLowerCase();
+    const allBranches = info.branches || [];
+    const defaultBranch = info.default_branch || 'main';
+
+    // 이미 등록된 브랜치 목록 (같은 component_id 기준)
+    const registeredBranches = new Set(
+      repos.filter(r => r.component_id === componentId).map(r => r.branch)
+    );
 
     _pendingRepoInfo = {
       repo, name: info.name || repo.split('/')[1],
-      component_id: componentId, branch: info.default_branch || 'main',
+      component_id: componentId,
+      branch: null,
+      defaultBranch,
     };
+
     $el('previewName').textContent = info.full_name || repo;
     $el('previewDesc').textContent = info.description || '';
     $el('previewComponent').textContent = componentIds.length > 1
       ? 'component_id: ' + componentId + ' (' + componentIds.join(', ') + ' 중 첫 번째)'
       : 'component_id: ' + componentId;
-    $el('addSubmitBtn').disabled = false;
+
+    // 브랜치 선택 목록 표시
+    $el('branchField').style.display = 'block';
+    renderBranchSelectList(allBranches, registeredBranches, defaultBranch);
+
   } catch (err) {
     $el('previewName').textContent = '조회 실패: ' + err.message;
+    $el('branchField').style.display = 'none';
+  }
+}
+
+function renderBranchSelectList(allBranches, registeredBranches, defaultBranch) {
+  const list = $el('branchSelectList');
+  if (!allBranches.length) {
+    list.innerHTML = '<div class="branch-loading">브랜치 정보를 불러오지 못했습니다.</div>';
+    return;
+  }
+  list.innerHTML = allBranches.map(branch => {
+    const isRegistered = registeredBranches.has(branch);
+    const isDefault = branch === defaultBranch;
+    const cls = 'branch-select-item' + (isRegistered ? ' already-registered' : '');
+    const defaultTag = isDefault ? '<span class="branch-item-tag">기본</span>' : '';
+    const registeredTag = isRegistered ? '<span style="font-size:11px;color:#98989f;margin-left:4px">등록됨</span>' : '';
+    const onclick = isRegistered ? '' : 'onclick="selectBranchItem(this)"';
+    return '<div class="' + cls + '" data-branch="' + esc(branch) + '" ' + onclick + '>'
+      + '<div class="branch-item-radio"></div>'
+      + '<span class="branch-item-name">' + esc(branch) + '</span>'
+      + defaultTag + registeredTag
+      + '</div>';
+  }).join('');
+}
+
+function selectBranchItem(el) {
+  const branch = el.dataset.branch;
+  $el('branchSelectList').querySelectorAll('.branch-select-item').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+  if (_pendingRepoInfo && branch) {
+    _pendingRepoInfo.branch = branch;
+    $el('addSubmitBtn').disabled = false;
   }
 }
 
 async function submitAddRepo() {
-  if (!_pendingRepoInfo) { toast('저장소 주소를 입력하고 잠시 기다려주세요.', 'warning'); return; }
-  const branch = ($el('addBranch').value || '').trim() || _pendingRepoInfo.branch;
-  const { repo, name, component_id } = _pendingRepoInfo;
+  if (!_pendingRepoInfo || !_pendingRepoInfo.branch) {
+    toast('브랜치를 선택해주세요.', 'warning'); return;
+  }
+  const { repo, name, component_id, branch } = _pendingRepoInfo;
   const btn = $el('addSubmitBtn');
   btn.disabled = true; btn.textContent = '추가 중...';
   try {
@@ -945,13 +1098,16 @@ async function submitAddRepo() {
 function closeAddModal() {
   $el('addModal').classList.remove('open');
   _pendingRepoInfo = null;
-  // 버튼 상태 항상 리셋
   const btn = $el('addSubmitBtn');
   if (btn) { btn.disabled = true; btn.textContent = '추가'; }
   const inp = $el('addRepo');
   if (inp) inp.value = '';
   const prev = $el('repoPreview');
   if (prev) prev.classList.remove('visible');
+  const bf = $el('branchField');
+  if (bf) bf.style.display = 'none';
+  const bsl = $el('branchSelectList');
+  if (bsl) bsl.innerHTML = '';
 }
 
 // ── Confirm / Toast ──
