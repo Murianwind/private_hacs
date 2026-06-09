@@ -11,6 +11,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import CONF_GITHUB_TOKEN, CONF_REPOS, DOMAIN
 from .coordinator import PrivateHacsCoordinator
 from .github import GitHubClient
+from .helpers import normalize_repo_config
 from .panel import async_remove_panel, async_setup_panel
 from .services import async_register_services, async_unregister_services
 from .store import RepositoryStore
@@ -24,8 +25,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     token: str | None = entry.data.get(CONF_GITHUB_TOKEN)
     repos: list[dict] = entry.data.get(CONF_REPOS, [])
 
-    # active 필드가 없는 기존 항목을 active=True로 정규화해서 저장
-    repos = _normalize_repos(repos)
+    # active 필드가 없는 기존 항목을 정규화해서 저장
+    repos = normalize_repo_config(repos)
     if repos != entry.data.get(CONF_REPOS, []):
         hass.config_entries.async_update_entry(
             entry, data={**entry.data, CONF_REPOS: repos}
@@ -55,17 +56,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _async_cleanup_legacy_entities(hass, entry, repos)
 
     return True
-
-
-def _normalize_repos(repos: list[dict]) -> list[dict]:
-    """active 필드가 없는 항목에 active=True를 명시적으로 추가."""
-    result = []
-    for r in repos:
-        if "active" not in r:
-            result.append({**r, "active": True})
-        else:
-            result.append(dict(r))
-    return result
 
 
 def _async_cleanup_legacy_entities(
