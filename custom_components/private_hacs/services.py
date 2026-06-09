@@ -210,10 +210,14 @@ async def _do_install(
         raise HomeAssistantError(f"설치 실패: {exc}") from exc
 
     store_data: dict = {"installed_version": install_version}
-    if not ref and latest.get("commit_sha"):
-        store_data["installed_commit_sha"] = latest["commit_sha"]
-    elif ref:
+    if ref:
+        # 특정 태그/ref 지정 설치 — commit_sha 초기화
         store_data["installed_commit_sha"] = None
+    else:
+        # latest의 commit_sha 사용 (branch 타입일 때만 값이 있음)
+        sha = latest.get("commit_sha")
+        if sha:
+            store_data["installed_commit_sha"] = sha
     await store.async_set_branch(component_id, branch, store_data)
 
     await coordinator.async_request_refresh()
@@ -298,7 +302,7 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str, branch: str) -
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
 
-    current_repos: list[dict] = list(entry.data.get(CONF_REPOS, []))
+    current_repos: list[dict] = _repos_with_active(list(entry.data.get(CONF_REPOS, [])))
     new_repos = [
         r for r in current_repos
         if not (r["component_id"] == component_id and r.get("branch", "main") == branch)
@@ -385,8 +389,8 @@ async def _do_toggle_branch(
 
     coordinator.async_update_listeners()
     _LOGGER.info(
-        "Branch %s@%s set active=%s, siblings deactivated=%s",
-        component_id, branch, active, active,
+        "Branch %s@%s set active=%s",
+        component_id, branch, active,
     )
 
     # 활성화 시 refresh만 수행 — 실제 설치는 패널에서 별도 호출
