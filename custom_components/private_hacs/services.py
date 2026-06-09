@@ -13,6 +13,7 @@ from homeassistant.helpers import entity_registry as er
 
 from .const import CONF_REPOS, DOMAIN
 from .coordinator import make_entry_key
+from .helpers import normalize_repo_config
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,16 +167,6 @@ def _require_entry_data(hass: HomeAssistant) -> dict:
     return ed
 
 
-def _repos_with_active(repos: list[dict]) -> list[dict]:
-    """active 필드가 없는 기존 항목에 active=True를 명시적으로 추가."""
-    result = []
-    for r in repos:
-        if "active" not in r:
-            result.append({**r, "active": True})
-        else:
-            result.append(r)
-    return result
-
 
 # ------------------------------------------------------------------
 # Service implementations
@@ -256,7 +247,7 @@ async def _do_add_repo(
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
 
     # active 필드 정규화
-    current_repos: list[dict] = _repos_with_active(list(entry.data.get(CONF_REPOS, [])))
+    current_repos: list[dict] = normalize_repo_config(list(entry.data.get(CONF_REPOS, [])))
 
     # 같은 component_id + branch 조합 중복 체크
     if any(r["component_id"] == component_id and r.get("branch", "main") == branch
@@ -302,7 +293,7 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str, branch: str) -
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
 
-    current_repos: list[dict] = _repos_with_active(list(entry.data.get(CONF_REPOS, [])))
+    current_repos: list[dict] = normalize_repo_config(list(entry.data.get(CONF_REPOS, [])))
     new_repos = [
         r for r in current_repos
         if not (r["component_id"] == component_id and r.get("branch", "main") == branch)
@@ -351,7 +342,7 @@ async def _do_toggle_branch(
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
 
     # active 필드 정규화 후 처리
-    current_repos: list[dict] = _repos_with_active(list(entry.data.get(CONF_REPOS, [])))
+    current_repos: list[dict] = normalize_repo_config(list(entry.data.get(CONF_REPOS, [])))
     found = False
     new_repos = []
     for r in current_repos:
