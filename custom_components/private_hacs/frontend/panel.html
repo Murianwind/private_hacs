@@ -608,8 +608,8 @@ async function fetchRepos() {
       if (!component_id || !branch) return null;
 
       const entry_key = component_id + '@' + branch;
-      const installed = a.installed_version || null;
-      const latest = a.latest_version || null;
+      const installed = a.installed_version || s.installed_version || null;
+      const latest = a.latest_version || s.latest_version || null;
       const hasUpdate = s.state === 'on';
       // active: 엔티티 attributes에서 읽음
       // available=True로 고정했으므로 a.active가 항상 정확히 전달됨
@@ -997,6 +997,7 @@ let _releaseModalState = { componentId: null, branch: null, name: null, releases
 
 async function openReleaseModal(componentId, branch, name, installedVersion) {
   _releaseModalState = { componentId, branch, name, releases: [], selectedTag: null, installedVersion };
+  console.log('[Private HACS] openReleaseModal installedVersion:', installedVersion);
   $el('releaseSelectTitle').textContent = name + ' (' + branch + ') — 버전 선택';
   $el('releaseInstallBtn').disabled = true;
   $el('releaseList').innerHTML = '<div style="text-align:center;padding:40px 0;color:#98989f"><div class="spinner" style="width:28px;height:28px;border-width:2px;margin:0 auto 10px"></div>릴리즈 목록 불러오는 중...</div>';
@@ -1017,12 +1018,16 @@ async function openReleaseModal(componentId, branch, name, installedVersion) {
 }
 
 function renderReleaseList(releases, installedVersion) {
+  console.log('[Private HACS] renderReleaseList installedVersion:', installedVersion, 'releases:', releases.map(r => r.tag_name));
+  // v 접두사 정규화 — "3.0.7"과 "v3.0.7" 모두 같은 버전으로 처리
+  const normalizeVer = v => v ? String(v).replace(/^v/, '') : '';
+  const normalizedInstalled = normalizeVer(installedVersion);
   if (!releases.length) {
     $el('releaseList').innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>릴리즈가 없습니다.</p></div>';
     return;
   }
   $el('releaseList').innerHTML = releases.map((r, idx) => {
-    const isCurrent = installedVersion && installedVersion !== '' && r.tag_name === installedVersion;
+    const isCurrent = normalizedInstalled && normalizeVer(r.tag_name) === normalizedInstalled;
     const nameDisplay = (r.name && r.name !== r.tag_name)
       ? '<div class="release-item-name">' + esc(r.name) + '</div><div class="release-item-tag">' + esc(r.tag_name) + '</div>'
       : '<div class="release-item-name">' + esc(r.tag_name) + '</div>';
