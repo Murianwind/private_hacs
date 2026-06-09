@@ -146,9 +146,22 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def release_url(self) -> str | None:
-        url = self._latest.get("release_url")
+        latest = self._latest
+        latest_type = latest.get("type")
+        url = latest.get("release_url")
+
+        # branch 타입이면 항상 커밋 로그 URL 사용
+        if latest_type == "branch":
+            repo = self._repo_data.get("repo")
+            branch = self._repo_data.get("branch", self._branch)
+            if repo:
+                return f"https://github.com/{repo}/commits/{branch}"
+
+        # release/tag 타입이면 release_url 사용
         if url:
             return url
+
+        # latest가 없는 경우 (비활성 브랜치 초기 상태 등) — 커밋 로그로 fallback
         repo = self._repo_data.get("repo")
         branch = self._repo_data.get("branch", self._branch)
         if repo:
