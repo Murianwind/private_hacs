@@ -145,10 +145,11 @@
   }
   .branch-row:last-child { border-bottom: none; }
   .branch-row.inactive { opacity: .5; }
-  /* 비활성 브랜치: 설치/업데이트 관련 버튼만 비활성화, 토글·등록해제는 허용 */
+  /* 비활성 브랜치: 재설치·삭제 버튼 비활성화, 토글·등록해제는 허용 */
   .branch-row.inactive .branch-actions .btn-success,
   .branch-row.inactive .branch-actions .btn-warning,
-  .branch-row.inactive .branch-actions .btn-ghost:not(.btn-remove) {
+  .branch-row.inactive .branch-actions .btn-ghost:not(.btn-remove),
+  .branch-row.inactive .branch-actions .btn-danger:not(.btn-remove) {
     pointer-events: none; opacity: .4;
   }
 
@@ -754,18 +755,22 @@ function branchRowHTML(r) {
   const sourceBadge = r.version_source === 'manifest'
     ? '<span class="badge badge-manifest">📄 자동 감지</span>' : '';
 
-  // 커밋 기반 저장소는 설치 버전 뒤에 SHA 7자 추가
-  const isBranchType = r.latest_type === 'branch';
-  const isReleaseType = r.latest_type === 'release' || r.latest_type === 'tag';
-  const shaStr = (isBranchType && r.installed_version && r.installed_commit_sha)
+  // SHA: installed_commit_sha가 있으면 항상 표시 (latest_type 무관)
+  const shaStr = r.installed_commit_sha
     ? '/' + String(r.installed_commit_sha).slice(0, 7) : '';
   const installedBadge = r.installed_version
     ? '<span class="badge badge-version">설치: ' + esc(r.installed_version) + esc(shaStr) + '</span>' : '';
   const latestBadge = r.has_update && r.latest_version
     ? '<span class="badge badge-version">최신: ' + esc(r.latest_version) + '</span>' : '';
-  const linkLabel = isBranchType ? '커밋 로그 ↗' : '릴리즈 노트 ↗';
+
+  // 커밋 로그 vs 릴리즈 노트: release_url이 /commits/ 경로면 커밋 로그
+  const isCommitUrl = r.release_url && r.release_url.includes('/commits/');
+  const linkLabel = isCommitUrl ? '커밋 로그 ↗' : '릴리즈 노트 ↗';
   const releaseLink = r.release_url
     ? '<a href="' + esc(r.release_url) + '" target="_blank" class="release-link">' + linkLabel + '</a>' : '';
+
+  // 릴리즈/태그 타입 여부 — 재설치 버튼 동작 결정
+  const isReleaseType = r.latest_type === 'release' || r.latest_type === 'tag';
 
   // 같은 component_id 브랜치가 1개뿐이면 토글 비활성화
   const isSingleBranch = repos.filter(repo => repo.component_id === r.component_id).length <= 1;
@@ -1017,7 +1022,7 @@ function renderReleaseList(releases, installedVersion) {
     return;
   }
   $el('releaseList').innerHTML = releases.map((r, idx) => {
-    const isCurrent = installedVersion && r.tag_name === installedVersion;
+    const isCurrent = installedVersion && installedVersion !== '' && r.tag_name === installedVersion;
     const nameDisplay = (r.name && r.name !== r.tag_name)
       ? '<div class="release-item-name">' + esc(r.name) + '</div><div class="release-item-tag">' + esc(r.tag_name) + '</div>'
       : '<div class="release-item-name">' + esc(r.tag_name) + '</div>';
