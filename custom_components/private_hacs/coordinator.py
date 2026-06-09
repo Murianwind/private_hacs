@@ -44,6 +44,9 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict[str, dict]:
         results: dict[str, dict] = {}
 
+        # component_id별 설치 여부를 한 번만 확인 (같은 component_id 브랜치가 여러 개일 때 중복 방지)
+        installed_cache: dict[str, bool] = {}
+
         for item in self.repos:
             repo: str = item["repo"]
             component_id: str = item["component_id"]
@@ -51,17 +54,21 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             active: bool = item.get("active", True)
             entry_key = make_entry_key(component_id, branch)
 
+            # 설치 여부: 캐시 활용
+            if component_id not in installed_cache:
+                installed_cache[component_id] = await self._check_installed(component_id)
+            is_installed = installed_cache[component_id]
+
             # 비활성 브랜치는 GitHub API 호출 최소화
-            # prev(이전 coordinator 데이터)에 latest가 있으면 재사용, 없으면 1회 조회
+            # prev에 latest가 있으면 재사용, 없으면 1회 조회
             if not active:
                 prev = (self.data or {}).get(entry_key, {})
                 store_entry = self.store.get_branch(component_id, branch)
                 installed_version = self.store.installed_version(component_id, branch)
-                is_installed = await self._check_installed(component_id)
 
                 latest = prev.get("latest")
                 if latest is None:
-                    # 최초 1회: latest_type 등 메타 정보를 위해 조회
+                    # 최초 1회: latest_type 등 메타 정보 확보
                     try:
                         latest = await self.github.resolve_latest(repo, component_id, branch)
                     except Exception as err:
@@ -85,12 +92,6 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 continue
 
             try:
-                repo_info = await self.github.get_repo_info(repo)
-                default_branch = (
-                    repo_info.get("default_branch", branch) if repo_info else branch
-                )
-                # 릴리즈/태그 추적: 브랜치 무관하게 저장소의 최신 태그 사용
-                # 커밋 추적: 활성화된 해당 브랜치의 HEAD만 사용
                 latest = await self.github.resolve_latest(repo, component_id, branch)
             except Exception as err:
                 _LOGGER.warning("Failed to fetch version info for %s: %s", repo, err)
@@ -106,18 +107,16 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 await self.store.async_set_branch(
                     component_id, branch, {"installed_version": installed_version}
                 )
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Auto-detected %s@%s v%s from manifest.json — persisted to store",
                     component_id, branch, installed_version,
                 )
                 version_source = "store"
 
-            is_installed = await self._check_installed(component_id)
             has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
 
-            # branch 타입이고 설치는 됐는데 SHA가 없는 경우 자동 복구
-            # (이전 버전으로 설치해서 store에 SHA가 없는 상태)
-            # has_update=False일 때만 — 최신과 같다고 볼 수 있는 경우
+            # branch 타입이고 설치됐는데 SHA가 없는 경우 자동 복구
+            # has_update=False일 때만 — 현재 최신 커밋이 설치된 것으로 간주
             if (
                 is_installed
                 and installed_version
@@ -131,7 +130,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 await self.store.async_set_branch(
                     component_id, branch, {"installed_commit_sha": installed_commit_sha}
                 )
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Auto-recovered installed_commit_sha for %s@%s: %s",
                     component_id, branch, installed_commit_sha[:7],
                 )
@@ -169,7 +168,10 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
         latest_type = latest.get("type")
 
         if latest_type in ("release", "tag"):
-            return installed_version != latest.get("version")
+            # v 접두사 정규화 후 비교
+            def _strip_v(v: str) -> str:
+                return v.lstrip("v") if v else v
+            return _strip_v(str(installed_version)) != _strip_v(str(latest.get("version", "")))
 
         if latest_type == "branch":
             remote_manifest_version = latest.get("remote_manifest_version")
@@ -204,6 +206,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
         return None, "none"
 
     def _read_manifest_version_sync(self, component_id: str) -> str | None:
+        """Read version from manifest.json (blocking — run in executor)."""
         path = self.hass.config.path(
             "custom_components", component_id, "manifest.json"
         )
@@ -219,5 +222,6 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             return None
 
     async def _check_installed(self, component_id: str) -> bool:
+        """Check whether the component directory exists (blocking — run in executor)."""
         path = self.hass.config.path("custom_components", component_id)
         return await self.hass.async_add_executor_job(os.path.isdir, path)
