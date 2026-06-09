@@ -60,6 +60,10 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         # repo_cfg의 active를 초기값으로 캐시
         self._active_cache: bool = bool(repo_cfg.get("active", True))
 
+        # has_icon은 파일 존재 여부 — 변경 빈도가 낮으므로 캐시
+        # None이면 아직 확인 안 됨, 다음 _handle_coordinator_update에서 갱신
+        self._has_icon_cache: bool | None = None
+
         self.entity_id = f"update.{self._component_id}_{self._branch}_update"
         self._attr_unique_id = f"repo_{self._component_id}_{self._branch}"
         self._attr_name = f"{repo_cfg['name']} ({self._branch})"
@@ -113,10 +117,15 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         return self._active_cache
 
     def _handle_coordinator_update(self) -> None:
-        """coordinator 갱신 시 _active_cache 동기화."""
+        """coordinator 갱신 시 _active_cache 및 _has_icon_cache 동기화."""
         data = self._repo_data
         if data and "active" in data:
             self._active_cache = bool(data["active"])
+        # has_icon 캐시 갱신 — coordinator 갱신 시에만 파일 확인
+        icon_path = self.hass.config.path(
+            "custom_components", self._component_id, "brand", "icon.png"
+        )
+        self._has_icon_cache = os.path.exists(icon_path)
         super()._handle_coordinator_update()
 
     @property
@@ -183,18 +192,20 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
     @property
     def extra_state_attributes(self) -> dict:
         latest = self._latest
-        icon_path = self.hass.config.path(
-            "custom_components", self._component_id, "brand", "icon.png"
-        )
-        has_icon = os.path.exists(icon_path)
+        # has_icon: 캐시 사용 (None이면 초기 상태 — 일단 파일 확인)
+        if self._has_icon_cache is None:
+            icon_path = self.hass.config.path(
+                "custom_components", self._component_id, "brand", "icon.png"
+            )
+            self._has_icon_cache = os.path.exists(icon_path)
         return {
             "branch": self._branch,
-            "active": self._is_active,       # 항상 노출 — 패널이 이 값으로 활성/비활성 표시
+            "active": self._is_active,
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
             "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
-            "has_icon": has_icon,
+            "has_icon": self._has_icon_cache,
         }
 
     async def async_release_notes(self) -> str | None:
