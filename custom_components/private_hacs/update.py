@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 
 from homeassistant.components.update import UpdateEntity, UpdateEntityFeature
 from homeassistant.config_entries import ConfigEntry
@@ -60,10 +59,6 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         # repo_cfg의 active를 초기값으로 캐시
         self._active_cache: bool = bool(repo_cfg.get("active", True))
 
-        # has_icon은 파일 존재 여부 — 변경 빈도가 낮으므로 캐시
-        # coordinator 갱신(_handle_coordinator_update) 시에만 갱신
-        self._has_icon_cache: bool = False
-
         self.entity_id = f"update.{self._component_id}_{self._branch}_update"
         self._attr_unique_id = f"repo_{self._component_id}_{self._branch}"
         self._attr_name = f"{repo_cfg['name']} ({self._branch})"
@@ -117,15 +112,10 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         return self._active_cache
 
     def _handle_coordinator_update(self) -> None:
-        """coordinator 갱신 시 _active_cache 및 _has_icon_cache 동기화."""
+        """coordinator 갱신 시 _active_cache 동기화."""
         data = self._repo_data
         if data and "active" in data:
             self._active_cache = bool(data["active"])
-        # has_icon 캐시 갱신 — coordinator 갱신 시에만 파일 확인
-        icon_path = self.hass.config.path(
-            "custom_components", self._component_id, "brand", "icon.png"
-        )
-        self._has_icon_cache = os.path.exists(icon_path)
         super()._handle_coordinator_update()
 
     @property
@@ -199,7 +189,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
             "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
-            "has_icon": self._has_icon_cache,
+            "has_icon": self._repo_data.get("has_icon", False),
         }
 
     async def async_release_notes(self) -> str | None:
