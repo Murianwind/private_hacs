@@ -246,6 +246,20 @@ async def _do_add_repo(
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
 
+    # 저장소 존재 여부 사전 검증
+    ed = _get_entry_data(hass)
+    if ed:
+        github = ed["github"]
+        try:
+            repo_info = await github.get_repo_info(repo)
+        except Exception as exc:
+            raise HomeAssistantError(f"저장소 조회 실패: {exc}") from exc
+        if repo_info is None:
+            raise HomeAssistantError(
+                f"저장소 '{repo}'를 찾을 수 없습니다. "
+                "주소가 올바른지, Private 저장소라면 토큰이 설정됐는지 확인하세요."
+            )
+
     # active 필드 정규화
     current_repos: list[dict] = normalize_repo_config(list(entry.data.get(CONF_REPOS, [])))
 
