@@ -1,17 +1,22 @@
 install:
   name: "설치/업데이트"
-  description: "지정한 컴포넌트를 설치하거나 업데이트합니다. ref를 지정하면 해당 버전으로 설치합니다."
+  description: "지정한 컴포넌트를 설치하거나 업데이트합니다."
   fields:
     component_id:
       name: "컴포넌트 ID"
-      description: "설치할 custom_component의 도메인 (예: my_integration)"
       required: true
       example: "my_integration"
       selector:
         text:
+    branch:
+      name: "브랜치"
+      required: true
+      example: "main"
+      selector:
+        text:
     ref:
       name: "버전 (태그/브랜치)"
-      description: "설치할 특정 릴리즈 태그 또는 브랜치명. 생략 시 최신 버전 설치."
+      description: "설치할 특정 릴리즈 태그. 생략 시 최신 버전."
       required: false
       example: "v1.2.0"
       selector:
@@ -23,9 +28,14 @@ uninstall:
   fields:
     component_id:
       name: "컴포넌트 ID"
-      description: "삭제할 custom_component의 도메인"
       required: true
       example: "my_integration"
+      selector:
+        text:
+    branch:
+      name: "브랜치"
+      required: true
+      example: "main"
       selector:
         text:
 
@@ -39,28 +49,24 @@ add_repo:
   fields:
     repo:
       name: "저장소"
-      description: "GitHub 저장소 경로 (예: owner/repo-name)"
       required: true
       example: "your-org/your-private-integration"
       selector:
         text:
     name:
       name: "표시 이름"
-      description: "패널에 표시될 이름"
       required: true
       example: "My Integration"
       selector:
         text:
     component_id:
       name: "컴포넌트 ID"
-      description: "custom_components 하위 폴더명 (snake_case)"
       required: true
       example: "my_integration"
       selector:
         text:
     branch:
-      name: "기본 브랜치"
-      description: "기본 브랜치 이름 (기본값: main)"
+      name: "브랜치"
       required: false
       example: "main"
       selector:
@@ -68,15 +74,43 @@ add_repo:
 
 remove_repo:
   name: "저장소 등록 해제"
-  description: "저장소 등록을 해제합니다. 설치된 파일과 버전 정보는 삭제되지 않습니다."
+  description: "저장소 특정 브랜치 등록을 해제합니다. 파일과 버전 정보는 유지됩니다."
   fields:
     component_id:
       name: "컴포넌트 ID"
-      description: "제거할 저장소의 component_id"
       required: true
       example: "my_integration"
       selector:
         text:
+    branch:
+      name: "브랜치"
+      required: true
+      example: "main"
+      selector:
+        text:
+
+toggle_branch:
+  name: "브랜치 활성/비활성"
+  description: "등록된 브랜치를 활성화하거나 비활성화합니다."
+  fields:
+    component_id:
+      name: "컴포넌트 ID"
+      required: true
+      example: "my_integration"
+      selector:
+        text:
+    branch:
+      name: "브랜치"
+      required: true
+      example: "dev"
+      selector:
+        text:
+    active:
+      name: "활성화 여부"
+      required: true
+      example: true
+      selector:
+        boolean:
 
 get_repo_info:
   name: "저장소 정보 조회"
@@ -84,7 +118,6 @@ get_repo_info:
   fields:
     repo:
       name: "저장소"
-      description: "owner/repo-name"
       required: true
       example: "your-org/your-integration"
       selector:
@@ -96,14 +129,12 @@ get_readme:
   fields:
     repo:
       name: "저장소"
-      description: "owner/repo-name"
       required: true
       example: "your-org/your-integration"
       selector:
         text:
     branch:
       name: "브랜치"
-      description: "조회할 브랜치 (기본값: main)"
       required: false
       example: "main"
       selector:
@@ -115,8 +146,13 @@ get_releases:
   fields:
     component_id:
       name: "컴포넌트 ID"
-      description: "조회할 저장소의 component_id"
       required: true
       example: "my_integration"
+      selector:
+        text:
+    branch:
+      name: "브랜치"
+      required: true
+      example: "main"
       selector:
         text:
