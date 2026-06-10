@@ -41,7 +41,6 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
     _attr_supported_features = (
         UpdateEntityFeature.RELEASE_NOTES
         | UpdateEntityFeature.SPECIFIC_VERSION
-        | UpdateEntityFeature.PROGRESS
     )
 
     def __init__(
@@ -147,37 +146,27 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
     def release_url(self) -> str | None:
         latest = self._latest
         latest_type = latest.get("type")
-        url = latest.get("release_url")
+        repo = self._repo_data.get("repo")
+        branch = self._repo_data.get("branch", self._branch)
 
-        # branch 타입이면 항상 커밋 로그 URL 사용
-        if latest_type == "branch":
-            repo = self._repo_data.get("repo")
-            branch = self._repo_data.get("branch", self._branch)
-            if repo:
-                return f"https://github.com/{repo}/commits/{branch}"
+        # branch 타입이면 항상 커밋 로그 URL
+        if latest_type == "branch" and repo:
+            return f"https://github.com/{repo}/commits/{branch}"
 
         # release/tag 타입이면 release_url 사용
+        url = latest.get("release_url")
         if url:
             return url
 
-        # latest가 없는 경우 (비활성 브랜치 초기 상태 등) — 커밋 로그로 fallback
-        repo = self._repo_data.get("repo")
-        branch = self._repo_data.get("branch", self._branch)
+        # latest 없는 초기 상태 — repo가 있으면 커밋 로그로 fallback
         if repo:
             return f"https://github.com/{repo}/commits/{branch}"
+
         return None
 
     @property
     def release_summary(self) -> str | None:
         return self._latest.get("release_summary")
-
-    @property
-    def in_progress(self) -> bool:
-        return False
-
-    @property
-    def update_percentage(self) -> int | None:
-        return None
 
     @property
     def extra_state_attributes(self) -> dict:

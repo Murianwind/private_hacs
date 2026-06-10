@@ -37,7 +37,6 @@ _SCHEMA_INSTALL = vol.Schema(
 _SCHEMA_UNINSTALL = vol.Schema(
     {
         vol.Required("component_id"): cv.string,
-        vol.Required("branch"): cv.string,
     }
 )
 _SCHEMA_EMPTY = vol.Schema({})
@@ -83,7 +82,7 @@ def async_register_services(hass: HomeAssistant) -> None:
         await _do_install(hass, call.data["component_id"], call.data["branch"], call.data.get("ref"))
 
     async def handle_uninstall(call: ServiceCall) -> None:
-        await _do_uninstall(hass, call.data["component_id"], call.data["branch"])
+        await _do_uninstall(hass, call.data["component_id"])
 
     async def handle_refresh(call: ServiceCall) -> None:
         await _do_refresh(hass)
@@ -214,22 +213,33 @@ async def _do_install(
     await coordinator.async_request_refresh()
 
 
-async def _do_uninstall(hass: HomeAssistant, component_id: str, branch: str) -> None:
+async def _do_uninstall(hass: HomeAssistant, component_id: str) -> None:
+    """
+    컴포넌트 파일을 삭제합니다.
+
+    custom_components/{component_id}/ 디렉토리는 브랜치와 무관하게 하나이므로
+    파일 삭제는 component_id 단위로 수행합니다.
+    store의 설치 기록도 component_id 전체를 초기화합니다.
+    저장소 등록(config entry의 repos)은 유지됩니다.
+    """
     ed = _require_entry_data(hass)
     coordinator = ed["coordinator"]
     github = ed["github"]
     store = ed["store"]
 
-    entry_key = make_entry_key(component_id, branch)
-    if coordinator.data is None or entry_key not in coordinator.data:
-        raise HomeAssistantError(f"'{entry_key}'를 찾을 수 없습니다.")
+    # component_id에 해당하는 entry_key가 하나라도 있는지 확인
+    if coordinator.data is None or not any(
+        d.get("component_id") == component_id for d in coordinator.data.values()
+    ):
+        raise HomeAssistantError(f"'{component_id}'를 찾을 수 없습니다.")
 
     try:
         await github.uninstall(hass, component_id)
     except Exception as exc:
         raise HomeAssistantError(f"삭제 실패: {exc}") from exc
 
-    await store.async_remove_branch(component_id, branch)
+    # 파일을 삭제했으므로 모든 브랜치의 설치 기록 초기화
+    await store.async_remove(component_id)
     await coordinator.async_request_refresh()
 
 
@@ -245,6 +255,20 @@ async def _do_add_repo(
     entry = _get_entry(hass)
     if entry is None:
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
+
+    # 저장소 존재 여부 사전 검증
+    ed = _get_entry_data(hass)
+    if ed:
+        github = ed["github"]
+        try:
+            repo_info = await github.get_repo_info(repo)
+        except Exception as exc:
+            raise HomeAssistantError(f"저장소 조회 실패: {exc}") from exc
+        if repo_info is None:
+            raise HomeAssistantError(
+                f"저장소 '{repo}'를 찾을 수 없습니다. "
+                "주소가 올바른지, Private 저장소라면 토큰이 설정됐는지 확인하세요."
+            )
 
     # active 필드 정규화
     current_repos: list[dict] = normalize_repo_config(list(entry.data.get(CONF_REPOS, [])))

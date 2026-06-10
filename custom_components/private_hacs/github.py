@@ -8,15 +8,19 @@ import os
 import shutil
 import tempfile
 import zipfile
-from typing import Any
 
 import aiohttp
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 
 _LOGGER = logging.getLogger(__name__)
 
 _GITHUB_API = "https://api.github.com"
+
+
+class GitHubAuthError(ConfigEntryAuthFailed):
+    """GitHub 인증 실패 — 토큰이 만료되었거나 유효하지 않습니다."""
 
 
 class GitHubClient:
@@ -42,7 +46,9 @@ class GitHubClient:
             if resp.status == 200:
                 return await resp.json()
             elif resp.status == 401:
-                _LOGGER.warning("get_repo_info %s — 인증 실패(401). 토큰을 확인하세요.", repo)
+                raise GitHubAuthError(
+                    "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
+                )
             elif resp.status == 403:
                 _LOGGER.warning("get_repo_info %s — 접근 거부(403). 토큰 권한을 확인하세요.", repo)
             else:
@@ -129,11 +135,12 @@ class GitHubClient:
                     "commit_sha": None,
                     "remote_manifest_version": None,
                 }
+            elif resp.status == 401:
+                raise GitHubAuthError(
+                    "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
+                )
             elif resp.status == 403:
                 _LOGGER.warning("resolve_latest %s — API Rate Limit 또는 접근 거부(403).", repo)
-                return None
-            elif resp.status == 401:
-                _LOGGER.warning("resolve_latest %s — 인증 실패(401). 토큰을 확인하세요.", repo)
                 return None
             # 404: 릴리즈 없음 → 다음 단계로
 
@@ -153,7 +160,11 @@ class GitHubClient:
                         "commit_sha": None,
                         "remote_manifest_version": None,
                     }
-            elif resp.status in (401, 403):
+            elif resp.status == 401:
+                raise GitHubAuthError(
+                    "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
+                )
+            elif resp.status in (403,):
                 _LOGGER.warning("resolve_latest(tags) %s → %s", repo, resp.status)
                 return None
             # 태그 없음 → 다음 단계로
