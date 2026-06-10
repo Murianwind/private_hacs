@@ -24,18 +24,12 @@ install:
 
 uninstall:
   name: "컴포넌트 삭제"
-  description: "컴포넌트 파일을 삭제합니다. 저장소 등록은 유지됩니다."
+  description: "컴포넌트 파일을 삭제합니다. 저장소 등록은 유지됩니다. 브랜치와 무관하게 component_id 전체 파일을 삭제합니다."
   fields:
     component_id:
       name: "컴포넌트 ID"
       required: true
       example: "my_integration"
-      selector:
-        text:
-    branch:
-      name: "브랜치"
-      required: true
-      example: "main"
       selector:
         text:
 
