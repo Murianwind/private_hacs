@@ -942,7 +942,7 @@ async function uninstall(componentId, branch, name) {
       busyKeys.add(key); renderRepos();
       toast(name + ' (' + branch + ') 삭제 중...', 'info');
       try {
-        await callService('private_hacs', 'uninstall', { component_id: componentId, branch });
+        await callService('private_hacs', 'uninstall', { component_id: componentId });
         toast(name + ' (' + branch + ') 삭제 완료. HA를 재시작하세요.', 'success', 6000);
         repos = await fetchRepos(); renderAll();
       } catch (err) {
