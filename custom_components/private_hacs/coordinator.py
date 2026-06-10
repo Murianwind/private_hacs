@@ -7,6 +7,7 @@ import os
 from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DEFAULT_SCAN_INTERVAL_HOURS, DOMAIN
@@ -81,6 +82,8 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                     # 최초 1회: latest_type 등 메타 정보 확보
                     try:
                         latest = await self.github.resolve_latest(repo, component_id, branch)
+                    except ConfigEntryAuthFailed:
+                        raise
                     except Exception as err:
                         _LOGGER.debug("Failed to fetch latest for inactive %s: %s", repo, err)
                         latest = None
@@ -104,6 +107,8 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
 
             try:
                 latest = await self.github.resolve_latest(repo, component_id, branch)
+            except ConfigEntryAuthFailed:
+                raise  # 인증 실패는 HA가 처리하도록 전파
             except Exception as err:
                 _LOGGER.warning("Failed to fetch version info for %s: %s", repo, err)
                 latest = None
