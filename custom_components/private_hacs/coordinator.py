@@ -46,6 +46,8 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
 
         # component_id별 설치 여부를 한 번만 확인 (같은 component_id 브랜치가 여러 개일 때 중복 방지)
         installed_cache: dict[str, bool] = {}
+        # has_icon도 component_id별 1회만 확인
+        has_icon_cache: dict[str, bool] = {}
 
         for item in self.repos:
             repo: str = item["repo"]
@@ -58,6 +60,14 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             if component_id not in installed_cache:
                 installed_cache[component_id] = await self._check_installed(component_id)
             is_installed = installed_cache[component_id]
+            # has_icon도 component_id별 1회만 확인 (executor에서 blocking I/O)
+            if component_id not in has_icon_cache:
+                icon_path = self.hass.config.path(
+                    "custom_components", component_id, "brand", "icon.png"
+                )
+                has_icon_cache[component_id] = await self.hass.async_add_executor_job(
+                    os.path.isfile, icon_path
+                )
 
             # 비활성 브랜치는 GitHub API 호출 최소화
             # prev에 latest가 있으면 재사용, 없으면 1회 조회
@@ -88,6 +98,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                     "installed_commit_sha": store_entry.get("installed_commit_sha"),
                     "is_installed": is_installed,
                     "has_update": False,
+                    "has_icon": has_icon_cache.get(component_id, False),
                 }
                 continue
 
@@ -148,6 +159,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 "is_installed": is_installed,
                 "version_source": version_source,
                 "has_update": has_update,
+                "has_icon": has_icon_cache.get(component_id, False),
             }
 
         return results
