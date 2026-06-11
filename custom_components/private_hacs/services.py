@@ -23,6 +23,7 @@ _REFRESH       = "refresh"
 _ADD_REPO      = "add_repo"
 _REMOVE_REPO   = "remove_repo"
 _TOGGLE_BRANCH = "toggle_branch"
+_SET_UPDATE_MODE = "set_update_mode"
 _GET_REPO_INFO = "get_repo_info"
 _GET_README    = "get_readme"
 _GET_RELEASES  = "get_releases"
@@ -46,6 +47,7 @@ _SCHEMA_ADD_REPO = vol.Schema(
         vol.Required("name"): cv.string,
         vol.Required("component_id"): cv.string,
         vol.Optional("branch", default="main"): cv.string,
+        vol.Optional("update_mode", default="release"): vol.In(["release", "commit"]),
     }
 )
 _SCHEMA_REMOVE_REPO = vol.Schema(
@@ -59,6 +61,13 @@ _SCHEMA_TOGGLE_BRANCH = vol.Schema(
         vol.Required("component_id"): cv.string,
         vol.Required("branch"): cv.string,
         vol.Required("active"): cv.boolean,
+    }
+)
+_SCHEMA_SET_UPDATE_MODE = vol.Schema(
+    {
+        vol.Required("component_id"): cv.string,
+        vol.Required("branch"): cv.string,
+        vol.Required("update_mode"): vol.In(["release", "commit"]),
     }
 )
 _SCHEMA_GET_REPO_INFO = vol.Schema({vol.Required("repo"): cv.string})
@@ -94,6 +103,7 @@ def async_register_services(hass: HomeAssistant) -> None:
             name=call.data["name"],
             component_id=call.data["component_id"],
             branch=call.data.get("branch", "main"),
+            update_mode=call.data.get("update_mode", "release"),
         )
 
     async def handle_remove_repo(call: ServiceCall) -> None:
@@ -113,12 +123,18 @@ def async_register_services(hass: HomeAssistant) -> None:
     async def handle_get_releases(call: ServiceCall) -> ServiceResponse:
         return await _do_get_releases(hass, call.data["component_id"], call.data["branch"])
 
-    _register_once(hass, _INSTALL,       handle_install,       _SCHEMA_INSTALL)
-    _register_once(hass, _UNINSTALL,     handle_uninstall,     _SCHEMA_UNINSTALL)
-    _register_once(hass, _REFRESH,       handle_refresh,       _SCHEMA_EMPTY)
-    _register_once(hass, _ADD_REPO,      handle_add_repo,      _SCHEMA_ADD_REPO)
-    _register_once(hass, _REMOVE_REPO,   handle_remove_repo,   _SCHEMA_REMOVE_REPO)
-    _register_once(hass, _TOGGLE_BRANCH, handle_toggle_branch, _SCHEMA_TOGGLE_BRANCH)
+    async def handle_set_update_mode(call: ServiceCall) -> None:
+        await _do_set_update_mode(
+            hass, call.data["component_id"], call.data["branch"], call.data["update_mode"]
+        )
+
+    _register_once(hass, _INSTALL,         handle_install,         _SCHEMA_INSTALL)
+    _register_once(hass, _UNINSTALL,       handle_uninstall,       _SCHEMA_UNINSTALL)
+    _register_once(hass, _REFRESH,         handle_refresh,         _SCHEMA_EMPTY)
+    _register_once(hass, _ADD_REPO,        handle_add_repo,        _SCHEMA_ADD_REPO)
+    _register_once(hass, _REMOVE_REPO,     handle_remove_repo,     _SCHEMA_REMOVE_REPO)
+    _register_once(hass, _TOGGLE_BRANCH,   handle_toggle_branch,   _SCHEMA_TOGGLE_BRANCH)
+    _register_once(hass, _SET_UPDATE_MODE, handle_set_update_mode, _SCHEMA_SET_UPDATE_MODE)
     _register_once(hass, _GET_REPO_INFO, handle_get_repo_info, _SCHEMA_GET_REPO_INFO,
                    supports_response=SupportsResponse.ONLY)
     _register_once(hass, _GET_README,    handle_get_readme,    _SCHEMA_GET_README,
@@ -138,7 +154,7 @@ def _register_once(hass, service, handler, schema, supports_response=SupportsRes
 def async_unregister_services(hass: HomeAssistant) -> None:
     for svc in (
         _INSTALL, _UNINSTALL, _REFRESH, _ADD_REPO, _REMOVE_REPO,
-        _TOGGLE_BRANCH, _GET_REPO_INFO, _GET_README, _GET_RELEASES,
+        _TOGGLE_BRANCH, _SET_UPDATE_MODE, _GET_REPO_INFO, _GET_README, _GET_RELEASES,
     ):
         if hass.services.has_service(DOMAIN, svc):
             hass.services.async_remove(DOMAIN, svc)
@@ -251,6 +267,7 @@ async def _do_refresh(hass: HomeAssistant) -> None:
 
 async def _do_add_repo(
     hass: HomeAssistant, repo: str, name: str, component_id: str, branch: str,
+    update_mode: str = "release",
 ) -> None:
     entry = _get_entry(hass)
     if entry is None:
@@ -293,6 +310,7 @@ async def _do_add_repo(
         "repo": repo, "name": name,
         "component_id": component_id, "branch": branch,
         "active": new_active,
+        "update_mode": update_mode,
     }
     current_repos.append(new_repo_cfg)
 
@@ -318,13 +336,33 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str, branch: str) -
         raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
 
     current_repos: list[dict] = normalize_repo_config(list(entry.data.get(CONF_REPOS, [])))
-    new_repos = [
-        r for r in current_repos
-        if not (r["component_id"] == component_id and r.get("branch", "main") == branch)
-    ]
 
-    if len(new_repos) == len(current_repos):
+    # 삭제 대상 찾기
+    target = next(
+        (r for r in current_repos
+         if r["component_id"] == component_id and r.get("branch", "main") == branch),
+        None,
+    )
+    if target is None:
         raise HomeAssistantError(f"'{component_id}@{branch}'는 등록된 저장소가 아닙니다.")
+
+    removing_active = target.get("active", True)
+    new_repos = [r for r in current_repos if r is not target]
+
+    # 활성 브랜치를 삭제하는데 같은 component_id의 다른 브랜치가 정확히 1개 남으면 자동 활성화
+    siblings = [r for r in new_repos if r["component_id"] == component_id]
+    if removing_active and len(siblings) == 1:
+        auto_activate_branch = siblings[0].get("branch", "main")
+        new_repos = [
+            {**r, "active": True} if r["component_id"] == component_id else r
+            for r in new_repos
+        ]
+        _LOGGER.info(
+            "Auto-activating %s@%s after active branch %s@%s was removed",
+            component_id, auto_activate_branch, component_id, branch,
+        )
+    else:
+        auto_activate_branch = None
 
     hass.config_entries.async_update_entry(
         entry, data={**entry.data, CONF_REPOS: new_repos}
@@ -338,6 +376,11 @@ async def _do_remove_repo(hass: HomeAssistant, component_id: str, branch: str) -
         entry_key = make_entry_key(component_id, branch)
         if coordinator.data:
             coordinator.data.pop(entry_key, None)
+            # 자동 활성화 시 coordinator.data에도 즉시 반영
+            if auto_activate_branch:
+                auto_key = make_entry_key(component_id, auto_activate_branch)
+                if auto_key in coordinator.data:
+                    coordinator.data[auto_key]["active"] = True
         coordinator.async_update_listeners()
 
         entity = ed.get("update_entities", {}).get(entry_key)
@@ -411,6 +454,44 @@ async def _do_toggle_branch(
     # 활성화 시 refresh만 수행 — 실제 설치는 패널에서 별도 호출
     if active:
         await coordinator.async_request_refresh()
+
+
+async def _do_set_update_mode(
+    hass: HomeAssistant, component_id: str, branch: str, update_mode: str
+) -> None:
+    """브랜치의 update_mode(release/commit)를 변경합니다."""
+    entry = _get_entry(hass)
+    if entry is None:
+        raise HomeAssistantError("Private HACS config entry를 찾을 수 없습니다.")
+
+    current_repos: list[dict] = normalize_repo_config(list(entry.data.get(CONF_REPOS, [])))
+    found = False
+    new_repos = []
+    for r in current_repos:
+        if r["component_id"] == component_id and r.get("branch", "main") == branch:
+            new_repos.append({**r, "update_mode": update_mode})
+            found = True
+        else:
+            new_repos.append(r)
+
+    if not found:
+        raise HomeAssistantError(f"'{component_id}@{branch}'를 찾을 수 없습니다.")
+
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_REPOS: new_repos}
+    )
+
+    ed = _get_entry_data(hass)
+    if ed:
+        coordinator = ed["coordinator"]
+        coordinator.repos = new_repos
+        entry_key = make_entry_key(component_id, branch)
+        if coordinator.data and entry_key in coordinator.data:
+            coordinator.data[entry_key]["update_mode"] = update_mode
+        coordinator.async_update_listeners()
+        await coordinator.async_request_refresh()
+
+    _LOGGER.info("update_mode for %s@%s set to %s", component_id, branch, update_mode)
 
 
 async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
