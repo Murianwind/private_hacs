@@ -1007,8 +1007,9 @@ async function removeRepo(componentId, branch, name) {
       try {
         await callService('private_hacs', 'remove_repo', { component_id: componentId, branch });
         toast(name + ' (' + branch + ') 등록 해제 완료.', 'success');
-        repos = repos.filter(r => !(r.component_id === componentId && r.branch === branch));
-        renderAll();
+        // 서버에서 최신 상태 읽기 — 자동 활성화 반영
+        await new Promise(r => setTimeout(r, 500));
+        repos = await fetchRepos(); renderAll();
       } catch (err) {
         toast('등록 해제 실패: ' + err.message, 'error', 6000);
       }
@@ -1186,19 +1187,23 @@ async function lookupRepo(repo) {
     const componentId = componentIds.length ? componentIds[0] : repo.split('/')[1].replace(/-/g,'_').toLowerCase();
     const allBranches = info.branches || [];
     const defaultBranch = info.default_branch || 'main';
+    const hasReleases = info.has_releases === true;
 
     // 이미 등록된 브랜치 목록 (같은 component_id 기준)
     const registeredBranches = new Set(
       repos.filter(r => r.component_id === componentId).map(r => r.branch)
     );
 
+    // 릴리즈가 있는 저장소이고 같은 component_id 기존 브랜치가 있을 때만 모드 선택 표시
+    const showModeSelect = registeredBranches.size > 0 && hasReleases;
+
     _pendingRepoInfo = {
       repo, name: info.name || repo.split('/')[1],
       component_id: componentId,
       branch: null,
       defaultBranch,
-      hasExisting: registeredBranches.size > 0,  // 같은 component_id 기존 등록 여부
-      update_mode: registeredBranches.size > 0 ? 'commit' : 'release', // 기본값
+      hasExisting: showModeSelect,
+      update_mode: showModeSelect ? 'commit' : (registeredBranches.size > 0 ? 'commit' : 'release'),
     };
 
     $el('previewName').textContent = info.full_name || repo;
@@ -1261,13 +1266,14 @@ function selectUpdateMode(mode) {
   const btnRelease = $el('modeBtnRelease');
   const btnCommit = $el('modeBtnCommit');
   const hint = $el('updateModeHint');
+  // 선택된 버튼: 배경색 강조, 미선택: ghost
   if (mode === 'release') {
-    btnRelease.className = 'btn btn-sm btn-primary'; btnRelease.style.flex = '1';
-    btnCommit.className = 'btn btn-sm btn-ghost'; btnCommit.style.flex = '1';
+    btnRelease.style.cssText = 'flex:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    btnCommit.style.cssText = 'flex:1;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
     hint.textContent = '릴리즈/태그 기준으로 업데이트합니다.';
   } else {
-    btnRelease.className = 'btn btn-sm btn-ghost'; btnRelease.style.flex = '1';
-    btnCommit.className = 'btn btn-sm btn-primary'; btnCommit.style.flex = '1';
+    btnRelease.style.cssText = 'flex:1;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+    btnCommit.style.cssText = 'flex:1;background:var(--primary);color:#fff;border-color:var(--primary)';
     hint.textContent = '해당 브랜치의 커밋 기준으로 업데이트합니다.';
   }
 }
