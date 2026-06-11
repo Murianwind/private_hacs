@@ -890,15 +890,15 @@ async function toggleBranch(componentId, branch, active) {
     busyKeys.delete(key);
     renderAll();
 
-    // 2단계: 커밋 기반 저장소(branch 타입)이고 업데이트가 있을 때만 팝업
     const updated = repos.find(r => r.component_id === componentId && r.branch === branch);
-    const isBranchType = updated && updated.latest_type === 'branch';
-    const needsInstall = isBranchType && updated.has_update;
 
-    if (needsInstall) {
+    if (!updated) {
+      toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
+    } else if (!updated.is_installed) {
+      // 미설치 상태 — 설치 팝업
       showConfirm(
         '브랜치 설치',
-        name + ' (' + branch + ') 브랜치로 전환하시겠습니까?\n\n현재 설치된 파일과 다른 커밋입니다.\n지금 설치하면 해당 브랜치의 최신 커밋으로 파일이 교체됩니다.\n설치 후 HA를 재시작해야 적용됩니다.\n\n취소하면 활성화만 되고 나중에 수동으로 설치할 수 있습니다.',
+        name + ' (' + branch + ') 브랜치를 활성화했습니다.\n\n아직 설치되지 않은 브랜치입니다.\n지금 설치하시겠습니까?\n\n취소하면 나중에 수동으로 설치할 수 있습니다.',
         async () => {
           busyKeys.add(key); renderRepos();
           toast(name + ' (' + branch + ') 설치 중...', 'info');
@@ -912,15 +912,29 @@ async function toggleBranch(componentId, branch, active) {
             busyKeys.delete(key); renderRepos();
           }
         }
-        // 취소: 활성화만 된 상태, 업데이트 버튼으로 표시됨
+      );
+    } else if (updated.has_update) {
+      // 설치됐지만 업데이트 있음 — 업데이트 팝업
+      showConfirm(
+        '브랜치 업데이트',
+        name + ' (' + branch + ') 브랜치를 활성화했습니다.\n\n새로운 업데이트가 있습니다.\n지금 업데이트하시겠습니까?\n\n취소하면 나중에 수동으로 업데이트할 수 있습니다.',
+        async () => {
+          busyKeys.add(key); renderRepos();
+          toast(name + ' (' + branch + ') 업데이트 중...', 'info');
+          try {
+            await callService('private_hacs', 'install', { component_id: componentId, branch });
+            toast(name + ' (' + branch + ') 업데이트 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
+            repos = await fetchRepos(); renderAll();
+          } catch (err) {
+            toast('업데이트 실패: ' + err.message, 'error', 6000);
+          } finally {
+            busyKeys.delete(key); renderRepos();
+          }
+        }
       );
     } else {
-      // 최신 커밋과 일치하거나 릴리즈/태그 타입 — 팝업 없이 활성화 완료
-      if (updated && updated.has_update) {
-        toast(name + ' (' + branch + ') 활성화됨. 업데이트가 있습니다.', 'success', 5000);
-      } else {
-        toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
-      }
+      // 설치됐고 최신 — 팝업 없이 활성화 완료
+      toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
     }
   } catch (err) {
     toast('활성화 실패: ' + err.message, 'error', 6000);
