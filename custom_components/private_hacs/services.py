@@ -226,6 +226,19 @@ async def _do_install(
             store_data["installed_commit_sha"] = sha
     await store.async_set_branch(component_id, branch, store_data)
 
+    # 같은 component_id의 다른 브랜치 설치 기록 초기화
+    # custom_components/{component_id}/ 는 하나뿐이므로
+    # 다른 브랜치의 installed_version/sha를 남겨두면 UI에서 모두 설치됨으로 표시됨
+    for other_branch in [
+        r.get("branch", "main")
+        for r in coordinator.repos
+        if r["component_id"] == component_id and r.get("branch", "main") != branch
+    ]:
+        await store.async_set_branch(
+            component_id, other_branch,
+            {"installed_version": None, "installed_commit_sha": None}
+        )
+
     await coordinator.async_request_refresh()
 
 
