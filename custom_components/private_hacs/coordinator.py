@@ -128,6 +128,24 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
 
             has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
 
+            # latest가 branch 타입인데 update_mode가 release인 경우
+            # → 릴리즈/태그가 없는 저장소임을 확인 — config에 commit으로 자동 저장
+            if (
+                latest
+                and latest.get("type") == "branch"
+                and update_mode == UPDATE_MODE_RELEASE
+            ):
+                _LOGGER.debug(
+                    "No release/tag for %s@%s — auto-switching update_mode to commit",
+                    component_id, branch,
+                )
+                update_mode = UPDATE_MODE_COMMIT
+                # repos 리스트 업데이트 (다음 폴링부터 바로 commit 모드 사용)
+                for r in self.repos:
+                    if r["component_id"] == component_id and r.get("branch", "main") == branch:
+                        r["update_mode"] = UPDATE_MODE_COMMIT
+                        break
+
             results[entry_key] = {
                 "entry_key": entry_key,
                 "repo": repo,
