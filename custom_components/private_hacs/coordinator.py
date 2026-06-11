@@ -92,7 +92,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 latest = (self.data or {}).get(entry_key, {}).get("latest")
 
             installed_version, version_source = await self._resolve_installed_version(
-                component_id, branch
+                component_id, branch, active
             )
             store_entry = self.store.get_branch(component_id, branch)
             installed_commit_sha = store_entry.get("installed_commit_sha")
@@ -204,11 +204,16 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
     # ------------------------------------------------------------------
 
     async def _resolve_installed_version(
-        self, component_id: str, branch: str
+        self, component_id: str, branch: str, active: bool = True
     ) -> tuple[str | None, str]:
         stored = self.store.installed_version(component_id, branch)
         if stored:
             return stored, "store"
+
+        # 비활성 브랜치는 manifest.json 자동 감지 차단
+        # 디스크의 파일이 다른 브랜치 것일 수 있으므로 store 기록만 신뢰
+        if not active:
+            return None, "none"
 
         manifest_version = await self.hass.async_add_executor_job(
             self._read_manifest_version_sync, component_id
