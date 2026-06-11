@@ -110,6 +110,37 @@ class GitHubClient:
     # Version resolution: release → tag → branch
     # ------------------------------------------------------------------
 
+    async def resolve_branch_latest(
+        self, repo: str, component_id: str, branch: str
+    ) -> dict | None:
+        """
+        Branch HEAD만 조회합니다 (update_mode=commit 전용).
+        릴리즈/태그를 건너뛰고 바로 브랜치 커밋 SHA를 반환합니다.
+        """
+        url = f"{_GITHUB_API}/repos/{repo}/branches/{branch}"
+        async with self._session.get(url, headers=self._headers()) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                commit_sha: str = data["commit"]["sha"]
+                remote_version = await self._get_remote_manifest_version(
+                    repo, commit_sha, component_id
+                )
+                return {
+                    "type": "branch",
+                    "version": remote_version or commit_sha[:7],
+                    "download_ref": branch,
+                    "release_url": f"https://github.com/{repo}/commits/{branch}",
+                    "release_summary": None,
+                    "commit_sha": commit_sha,
+                    "remote_manifest_version": remote_version,
+                }
+            elif resp.status == 401:
+                raise GitHubAuthError(
+                    "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
+                )
+            _LOGGER.debug("resolve_branch_latest %s@%s → %s", repo, branch, resp.status)
+            return None
+
     async def resolve_latest(
         self, repo: str, component_id: str, branch: str = "main"
     ) -> dict | None:
