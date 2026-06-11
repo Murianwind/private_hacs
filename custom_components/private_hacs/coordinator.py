@@ -107,9 +107,8 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 )
                 version_source = "store"
 
-            has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
-
-            # branch 타입이고 설치됐는데 SHA가 없는 경우 자동 복구
+            # branch 타입이고 설치됐는데 SHA가 없으면 현재 remote SHA로 복구
+            # has_update 계산 전에 수행해야 정확한 비교 가능
             if (
                 is_installed
                 and installed_version
@@ -117,7 +116,6 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 and latest
                 and latest.get("type") == "branch"
                 and latest.get("commit_sha")
-                and not has_update
             ):
                 installed_commit_sha = latest["commit_sha"]
                 await self.store.async_set_branch(
@@ -127,6 +125,8 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                     "Auto-recovered installed_commit_sha for %s@%s: %s",
                     component_id, branch, installed_commit_sha[:7],
                 )
+
+            has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
 
             results[entry_key] = {
                 "entry_key": entry_key,
