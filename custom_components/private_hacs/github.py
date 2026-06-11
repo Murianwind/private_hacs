@@ -101,6 +101,7 @@ class GitHubClient:
                     "published_at": (r.get("published_at") or "")[:10],
                     "html_url": r.get("html_url", ""),
                     "prerelease": r.get("prerelease", False),
+                    "target_commitish": r.get("target_commitish"),
                 }
                 for r in releases
                 if isinstance(r, dict)
@@ -152,76 +153,80 @@ class GitHubClient:
           2. Git Tag (브랜치 무관 — 태그는 저장소 전체의 버전으로 간주)
           3. Branch HEAD → type="branch"
         """
-        # 1. Release — 현재 브랜치를 타겟으로 하는 최신 릴리즈 필터링
-        url = f"{_GITHUB_API}/repos/{repo}/releases?per_page=20"
-        async with self._session.get(url, headers=self._headers()) as resp:
-            if resp.status == 401:
-                raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
-            if resp.status == 403:
-                _LOGGER.warning("resolve_latest %s — API Rate Limit 또는 접근 거부(403).", repo)
-                return None
-            if resp.status == 200:
-                releases = await resp.json()
-                branch_releases = [
-                    r for r in releases
-                    if isinstance(r, dict) and r.get("target_commitish") == branch
-                ]
-                if branch_releases:
-                    data = branch_releases[0]  # 최신순 정렬됨
-                    return {
-                        "type": "release",
-                        "version": data["tag_name"],
-                        "download_ref": data["tag_name"],
-                        "release_url": data["html_url"],
-                        "release_summary": (data.get("body") or "")[:255] or None,
-                        "commit_sha": None,
-                        "remote_manifest_version": None,
-                    }
-            # 200이지만 해당 브랜치 릴리즈 없음, 또는 404 → 다음 단계로
+        try:
+            # 1. Release — 현재 브랜치를 타겟으로 하는 최신 릴리즈 필터링
+            url = f"{_GITHUB_API}/repos/{repo}/releases?per_page=20"
+            async with self._session.get(url, headers=self._headers()) as resp:
+                if resp.status == 401:
+                    raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
+                if resp.status == 403:
+                    _LOGGER.warning("resolve_latest %s — Rate Limit 또는 접근 거부(403).", repo)
+                    return None
+                if resp.status == 200:
+                    releases = await resp.json()
+                    branch_releases = [
+                        r for r in releases
+                        if isinstance(r, dict) and r.get("target_commitish") == branch
+                    ]
+                    if branch_releases:
+                        data = branch_releases[0]
+                        return {
+                            "type": "release",
+                            "version": data["tag_name"],
+                            "download_ref": data["tag_name"],
+                            "release_url": data["html_url"],
+                            "release_summary": (data.get("body") or "")[:255] or None,
+                            "commit_sha": None,
+                            "remote_manifest_version": None,
+                        }
 
-        # 2. Tag (브랜치 무관 — 태그가 있으면 저장소 전체의 버전으로 간주)
-        url = f"{_GITHUB_API}/repos/{repo}/tags"
-        async with self._session.get(url, headers=self._headers()) as resp:
-            if resp.status == 401:
-                raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
-            if resp.status == 403:
-                _LOGGER.warning("resolve_latest(tags) %s — 접근 거부(403).", repo)
-                return None
-            if resp.status == 200:
-                tags = await resp.json()
-                if tags:
-                    tag_name = tags[0]["name"]
+            # 2. Tag (브랜치 무관)
+            url = f"{_GITHUB_API}/repos/{repo}/tags"
+            async with self._session.get(url, headers=self._headers()) as resp:
+                if resp.status == 401:
+                    raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
+                if resp.status == 403:
+                    _LOGGER.warning("resolve_latest(tags) %s — 접근 거부(403).", repo)
+                    return None
+                if resp.status == 200:
+                    tags = await resp.json()
+                    if tags:
+                        tag_name = tags[0]["name"]
+                        return {
+                            "type": "tag",
+                            "version": tag_name,
+                            "download_ref": tag_name,
+                            "release_url": f"https://github.com/{repo}/releases/tag/{tag_name}",
+                            "release_summary": None,
+                            "commit_sha": None,
+                            "remote_manifest_version": None,
+                        }
+
+            # 3. Branch HEAD
+            url = f"{_GITHUB_API}/repos/{repo}/branches/{branch}"
+            async with self._session.get(url, headers=self._headers()) as resp:
+                if resp.status == 401:
+                    raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
+                if resp.status == 200:
+                    data = await resp.json()
+                    commit_sha: str = data["commit"]["sha"]
+                    remote_version = await self._get_remote_manifest_version(
+                        repo, commit_sha, component_id
+                    )
                     return {
-                        "type": "tag",
-                        "version": tag_name,
-                        "download_ref": tag_name,
-                        "release_url": f"https://github.com/{repo}/releases/tag/{tag_name}",
+                        "type": "branch",
+                        "version": remote_version or commit_sha[:7],
+                        "download_ref": branch,
+                        "release_url": f"https://github.com/{repo}/commits/{branch}",
                         "release_summary": None,
-                        "commit_sha": None,
-                        "remote_manifest_version": None,
+                        "commit_sha": commit_sha,
+                        "remote_manifest_version": remote_version,
                     }
-            # 태그 없음 → 다음 단계로
 
-        # 3. Branch HEAD
-        url = f"{_GITHUB_API}/repos/{repo}/branches/{branch}"
-        async with self._session.get(url, headers=self._headers()) as resp:
-            if resp.status == 401:
-                raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
-            if resp.status == 200:
-                data = await resp.json()
-                commit_sha: str = data["commit"]["sha"]
-                remote_version = await self._get_remote_manifest_version(
-                    repo, commit_sha, component_id
-                )
-                return {
-                    "type": "branch",
-                    "version": remote_version or commit_sha[:7],
-                    "download_ref": branch,
-                    "release_url": f"https://github.com/{repo}/commits/{branch}",
-                    "release_summary": None,
-                    "commit_sha": commit_sha,
-                    "remote_manifest_version": remote_version,
-                }
+        except GitHubAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.debug("Error resolving latest for %s@%s: %s", repo, branch, err)
 
         _LOGGER.warning("resolve_latest: no version info found for %s@%s", repo, branch)
         return None
