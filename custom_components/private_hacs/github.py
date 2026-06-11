@@ -145,27 +145,34 @@ class GitHubClient:
         self, repo: str, component_id: str, branch: str = "main"
     ) -> dict | None:
         """
-        Resolve the latest available version.
+        Resolve the latest available version for the given branch.
 
         Priority:
-          1. GitHub Release  → type="release"
-          2. Git Tag         → type="tag"
-          3. Branch HEAD     → type="branch" (includes commit SHA + remote manifest version)
+          1. GitHub Release targeting this branch (target_commitish == branch)
+          2. Git Tag (브랜치 무관 — 태그는 저장소 전체에 하나)
+          3. Branch HEAD → type="branch"
         """
-        # 1. Release
-        url = f"{_GITHUB_API}/repos/{repo}/releases/latest"
+        # 1. Release — 전체 릴리즈 목록에서 해당 브랜치 대상 릴리즈만 필터링
+        url = f"{_GITHUB_API}/repos/{repo}/releases?per_page=20"
         async with self._session.get(url, headers=self._headers()) as resp:
             if resp.status == 200:
-                data = await resp.json()
-                return {
-                    "type": "release",
-                    "version": data["tag_name"],
-                    "download_ref": data["tag_name"],
-                    "release_url": data["html_url"],
-                    "release_summary": (data.get("body") or "")[:255] or None,
-                    "commit_sha": None,
-                    "remote_manifest_version": None,
-                }
+                releases = await resp.json()
+                # target_commitish가 branch와 일치하는 릴리즈 중 가장 최신
+                branch_releases = [
+                    r for r in releases
+                    if isinstance(r, dict) and r.get("target_commitish") == branch
+                ]
+                if branch_releases:
+                    data = branch_releases[0]  # 최신순 정렬됨
+                    return {
+                        "type": "release",
+                        "version": data["tag_name"],
+                        "download_ref": data["tag_name"],
+                        "release_url": data["html_url"],
+                        "release_summary": (data.get("body") or "")[:255] or None,
+                        "commit_sha": None,
+                        "remote_manifest_version": None,
+                    }
             elif resp.status == 401:
                 raise GitHubAuthError(
                     "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
@@ -173,9 +180,9 @@ class GitHubClient:
             elif resp.status == 403:
                 _LOGGER.warning("resolve_latest %s — API Rate Limit 또는 접근 거부(403).", repo)
                 return None
-            # 404: 릴리즈 없음 → 다음 단계로
+            # 릴리즈 없음 또는 해당 브랜치 릴리즈 없음 → 다음 단계로
 
-        # 2. Tag
+        # 2. Tag (브랜치 무관 — 태그가 있으면 저장소 전체의 버전으로 간주)
         url = f"{_GITHUB_API}/repos/{repo}/tags"
         async with self._session.get(url, headers=self._headers()) as resp:
             if resp.status == 200:
@@ -195,7 +202,7 @@ class GitHubClient:
                 raise GitHubAuthError(
                     "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
                 )
-            elif resp.status in (403,):
+            elif resp.status == 403:
                 _LOGGER.warning("resolve_latest(tags) %s → %s", repo, resp.status)
                 return None
             # 태그 없음 → 다음 단계로
