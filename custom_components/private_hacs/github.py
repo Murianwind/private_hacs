@@ -31,7 +31,10 @@ class GitHubClient:
         self._session = session
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Accept": "application/vnd.github.v3+json"}
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "HomeAssistant-PrivateHACS",
+        }
         if self._token:
             headers["Authorization"] = f"token {self._token}"
         return headers
@@ -153,12 +156,15 @@ class GitHubClient:
           2. Git Tag (브랜치 무관 — 태그는 저장소 전체의 버전으로 간주)
           3. Branch HEAD → type="branch"
         """
+        def _check_auth(status: int) -> None:
+            if status == 401:
+                raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
+
         try:
             # 1. Release — 현재 브랜치를 타겟으로 하는 최신 릴리즈 필터링
             url = f"{_GITHUB_API}/repos/{repo}/releases?per_page=20"
             async with self._session.get(url, headers=self._headers()) as resp:
-                if resp.status == 401:
-                    raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
+                _check_auth(resp.status)
                 if resp.status == 403:
                     _LOGGER.warning("resolve_latest %s — Rate Limit 또는 접근 거부(403).", repo)
                     return None
@@ -183,8 +189,7 @@ class GitHubClient:
             # 2. Tag (브랜치 무관)
             url = f"{_GITHUB_API}/repos/{repo}/tags"
             async with self._session.get(url, headers=self._headers()) as resp:
-                if resp.status == 401:
-                    raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
+                _check_auth(resp.status)
                 if resp.status == 403:
                     _LOGGER.warning("resolve_latest(tags) %s — 접근 거부(403).", repo)
                     return None
@@ -205,8 +210,7 @@ class GitHubClient:
             # 3. Branch HEAD
             url = f"{_GITHUB_API}/repos/{repo}/branches/{branch}"
             async with self._session.get(url, headers=self._headers()) as resp:
-                if resp.status == 401:
-                    raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
+                _check_auth(resp.status)
                 if resp.status == 200:
                     data = await resp.json()
                     commit_sha: str = data["commit"]["sha"]
@@ -226,7 +230,7 @@ class GitHubClient:
         except GitHubAuthError:
             raise
         except Exception as err:
-            _LOGGER.debug("Error resolving latest for %s@%s: %s", repo, branch, err)
+            _LOGGER.warning("Error resolving latest for %s@%s: %s", repo, branch, err)
 
         _LOGGER.warning("resolve_latest: no version info found for %s@%s", repo, branch)
         return None
