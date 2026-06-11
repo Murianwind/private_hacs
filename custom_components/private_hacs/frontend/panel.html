@@ -414,6 +414,7 @@
   </div>
   <div class="header-actions">
     <button class="btn btn-sm" onclick="refreshAll()" id="refreshBtn">🔄 새로고침</button>
+    <button class="btn btn-sm" onclick="confirmRestart()" style="background:rgba(255,100,100,.25);color:#fff;border:1px solid rgba(255,100,100,.4);">⏻ HA 재시작</button>
     <button class="btn btn-sm" onclick="openAddModal()" style="background:rgba(255,255,255,.25);color:#fff;border:1px solid rgba(255,255,255,.4);">＋ 저장소 추가</button>
   </div>
 </div>
@@ -1014,6 +1015,21 @@ async function removeRepo(componentId, branch, name) {
         toast('등록 해제 실패: ' + err.message, 'error', 6000);
       }
     });
+}
+
+async function confirmRestart() {
+  showConfirm(
+    'HA 재시작',
+    'Home Assistant를 재시작하시겠습니까?\n\n재시작 중에는 모든 자동화와 통합이 잠시 중단됩니다.',
+    async () => {
+      try {
+        await callService('homeassistant', 'restart', {});
+        toast('HA 재시작 요청을 보냈습니다. 잠시 후 연결이 끊길 수 있습니다.', 'info', 6000);
+      } catch (err) {
+        toast('재시작 실패: ' + err.message, 'error', 5000);
+      }
+    }
+  );
 }
 
 async function refreshAll() {
