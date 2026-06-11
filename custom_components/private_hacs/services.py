@@ -523,6 +523,14 @@ async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
     except Exception as err:
         _LOGGER.debug("Could not list branches for %s: %s", repo, err)
 
+    # 릴리즈 존재 여부 확인 (1개만 조회)
+    has_releases = False
+    try:
+        releases = await github.get_releases(repo, max_count=1)
+        has_releases = len(releases) > 0
+    except Exception as err:
+        _LOGGER.debug("Could not check releases for %s: %s", repo, err)
+
     return {
         "name": repo_info.get("name", repo.split("/")[1]),
         "description": repo_info.get("description") or "",
@@ -530,6 +538,7 @@ async def _do_get_repo_info(hass: HomeAssistant, repo: str) -> ServiceResponse:
         "full_name": repo_info.get("full_name", repo),
         "component_ids": component_ids,
         "branches": branches,
+        "has_releases": has_releases,
     }
 
 
