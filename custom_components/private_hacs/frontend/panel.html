@@ -145,13 +145,6 @@
   }
   .branch-row:last-child { border-bottom: none; }
   .branch-row.inactive { opacity: .5; }
-  /* 비활성 브랜치: 재설치·삭제 버튼 비활성화, 토글·등록해제는 허용 */
-  .branch-row.inactive .branch-actions .btn-success,
-  .branch-row.inactive .branch-actions .btn-warning,
-  .branch-row.inactive .branch-actions .btn-ghost:not(.btn-remove),
-  .branch-row.inactive .branch-actions .btn-danger:not(.btn-remove) {
-    pointer-events: none; opacity: .4;
-  }
 
   .branch-label {
     display: flex; align-items: center; gap: 6px;
@@ -810,15 +803,20 @@ function branchRowHTML(r) {
   let actions = '';
   if (busy) {
     actions = '<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>';
+  } else if (!r.active) {
+    // 비활성 브랜치: 등록 해제 버튼만 표시 (규칙 4, 5)
+    actions = '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else if (!r.is_installed) {
+    // 활성 + 미설치: 설치 + 등록 해제 (규칙 6 — 활성화 팝업 취소 시 이 상태)
     actions = '<button class="btn btn-success btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬇ 설치</button>'
       + '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else if (r.has_update) {
+    // 활성 + 업데이트 있음
     actions = '<button class="btn btn-warning btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬆ 업데이트</button>'
       + '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>'
       + '<button class="btn btn-ghost btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else {
-    // 재설치: 릴리즈/태그 타입이면 릴리즈 선택 모달, 커밋 타입이면 confirm 후 재설치
+    // 활성 + 설치됨 + 최신: 재설치 + 컴포넌트 삭제 + 등록 해제
     const reinstallBtn = isReleaseType
       ? '<button class="btn btn-ghost btn-sm" onclick="openReleaseModal(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\',\'' + esc(r.installed_version || '') + '\')">🔄 재설치</button>'
       : '<button class="btn btn-ghost btn-sm" onclick="reinstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">🔄 재설치</button>';
@@ -1265,14 +1263,20 @@ function selectBranchItem(el) {
   el.classList.add('selected');
   if (_pendingRepoInfo && branch) {
     _pendingRepoInfo.branch = branch;
-    // 기존 등록 브랜치가 있으면(두 번째 이상) update_mode 선택 UI 표시
     if (_pendingRepoInfo.hasExisting) {
       $el('updateModeField').style.display = 'block';
-      selectUpdateMode(_pendingRepoInfo.update_mode || 'commit');
+      // 처음 선택 시 둘 다 흐리게 → 아무것도 선택 안 된 상태
+      const btnR = $el('modeBtnRelease');
+      const btnC = $el('modeBtnCommit');
+      if (btnR) btnR.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+      if (btnC) btnC.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+      $el('updateModeHint').textContent = '업데이트 방식을 선택해주세요.';
+      _pendingRepoInfo.update_mode = null; // 선택 전까지 null
+      $el('addSubmitBtn').disabled = true;  // 모드 선택 전까지 추가 불가
     } else {
       $el('updateModeField').style.display = 'none';
+      $el('addSubmitBtn').disabled = false;
     }
-    $el('addSubmitBtn').disabled = false;
   }
 }
 
@@ -1282,21 +1286,25 @@ function selectUpdateMode(mode) {
   const btnRelease = $el('modeBtnRelease');
   const btnCommit = $el('modeBtnCommit');
   const hint = $el('updateModeHint');
-  // 선택된 버튼: 배경색 강조, 미선택: ghost
   if (mode === 'release') {
-    btnRelease.style.cssText = 'flex:1;background:var(--primary);color:#fff;border-color:var(--primary)';
-    btnCommit.style.cssText = 'flex:1;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+    btnRelease.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    btnCommit.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
     hint.textContent = '릴리즈/태그 기준으로 업데이트합니다.';
   } else {
-    btnRelease.style.cssText = 'flex:1;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
-    btnCommit.style.cssText = 'flex:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    btnRelease.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+    btnCommit.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
     hint.textContent = '해당 브랜치의 커밋 기준으로 업데이트합니다.';
   }
+  // 모드 선택 완료 → 추가 버튼 활성화
+  if (_pendingRepoInfo.branch) $el('addSubmitBtn').disabled = false;
 }
 
 async function submitAddRepo() {
   if (!_pendingRepoInfo || !_pendingRepoInfo.branch) {
     toast('브랜치를 선택해주세요.', 'warning'); return;
+  }
+  if (_pendingRepoInfo.hasExisting && !_pendingRepoInfo.update_mode) {
+    toast('업데이트 방식을 선택해주세요.', 'warning'); return;
   }
   const { repo, name, component_id, branch, update_mode } = _pendingRepoInfo;
   const btn = $el('addSubmitBtn');
