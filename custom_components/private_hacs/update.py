@@ -174,6 +174,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         return {
             "branch": self._branch,
             "active": self._is_active,
+            "update_mode": self._repo_data.get("update_mode", "release"),
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
