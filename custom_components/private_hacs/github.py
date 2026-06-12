@@ -31,7 +31,10 @@ class GitHubClient:
         self._session = session
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Accept": "application/vnd.github.v3+json"}
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "HomeAssistant-PrivateHACS",
+        }
         if self._token:
             headers["Authorization"] = f"token {self._token}"
         return headers
@@ -101,6 +104,7 @@ class GitHubClient:
                     "published_at": (r.get("published_at") or "")[:10],
                     "html_url": r.get("html_url", ""),
                     "prerelease": r.get("prerelease", False),
+                    "target_commitish": r.get("target_commitish"),
                 }
                 for r in releases
                 if isinstance(r, dict)
@@ -110,66 +114,13 @@ class GitHubClient:
     # Version resolution: release → tag → branch
     # ------------------------------------------------------------------
 
-    async def resolve_latest(
-        self, repo: str, component_id: str, branch: str = "main"
+    async def resolve_branch_latest(
+        self, repo: str, component_id: str, branch: str
     ) -> dict | None:
         """
-        Resolve the latest available version.
-
-        Priority:
-          1. GitHub Release  → type="release"
-          2. Git Tag         → type="tag"
-          3. Branch HEAD     → type="branch" (includes commit SHA + remote manifest version)
+        Branch HEAD만 조회합니다 (update_mode=commit 전용).
+        릴리즈/태그를 건너뛰고 바로 브랜치 커밋 SHA를 반환합니다.
         """
-        # 1. Release
-        url = f"{_GITHUB_API}/repos/{repo}/releases/latest"
-        async with self._session.get(url, headers=self._headers()) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                return {
-                    "type": "release",
-                    "version": data["tag_name"],
-                    "download_ref": data["tag_name"],
-                    "release_url": data["html_url"],
-                    "release_summary": (data.get("body") or "")[:255] or None,
-                    "commit_sha": None,
-                    "remote_manifest_version": None,
-                }
-            elif resp.status == 401:
-                raise GitHubAuthError(
-                    "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
-                )
-            elif resp.status == 403:
-                _LOGGER.warning("resolve_latest %s — API Rate Limit 또는 접근 거부(403).", repo)
-                return None
-            # 404: 릴리즈 없음 → 다음 단계로
-
-        # 2. Tag
-        url = f"{_GITHUB_API}/repos/{repo}/tags"
-        async with self._session.get(url, headers=self._headers()) as resp:
-            if resp.status == 200:
-                tags = await resp.json()
-                if tags:
-                    tag_name = tags[0]["name"]
-                    return {
-                        "type": "tag",
-                        "version": tag_name,
-                        "download_ref": tag_name,
-                        "release_url": f"https://github.com/{repo}/releases/tag/{tag_name}",
-                        "release_summary": None,
-                        "commit_sha": None,
-                        "remote_manifest_version": None,
-                    }
-            elif resp.status == 401:
-                raise GitHubAuthError(
-                    "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
-                )
-            elif resp.status in (403,):
-                _LOGGER.warning("resolve_latest(tags) %s → %s", repo, resp.status)
-                return None
-            # 태그 없음 → 다음 단계로
-
-        # 3. Branch HEAD
         url = f"{_GITHUB_API}/repos/{repo}/branches/{branch}"
         async with self._session.get(url, headers=self._headers()) as resp:
             if resp.status == 200:
@@ -187,8 +138,101 @@ class GitHubClient:
                     "commit_sha": commit_sha,
                     "remote_manifest_version": remote_version,
                 }
+            elif resp.status == 401:
+                raise GitHubAuthError(
+                    "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
+                )
+            _LOGGER.debug("resolve_branch_latest %s@%s → %s", repo, branch, resp.status)
+            return None
 
-        _LOGGER.warning("resolve_latest: no version info found for %s", repo)
+    async def resolve_latest(
+        self, repo: str, component_id: str, branch: str = "main"
+    ) -> dict | None:
+        """
+        Resolve the latest available version for the given branch.
+
+        Priority:
+          1. GitHub Release targeting this branch (target_commitish == branch)
+          2. Git Tag (브랜치 무관 — 태그는 저장소 전체의 버전으로 간주)
+          3. Branch HEAD → type="branch"
+        """
+        def _check_auth(status: int) -> None:
+            if status == 401:
+                raise GitHubAuthError("GitHub 토큰이 유효하지 않습니다. 토큰을 재설정해주세요.")
+
+        try:
+            # 1. Release — 현재 브랜치를 타겟으로 하는 최신 릴리즈 필터링
+            url = f"{_GITHUB_API}/repos/{repo}/releases?per_page=20"
+            async with self._session.get(url, headers=self._headers()) as resp:
+                _check_auth(resp.status)
+                if resp.status == 403:
+                    _LOGGER.warning("resolve_latest %s — Rate Limit 또는 접근 거부(403).", repo)
+                    return None
+                if resp.status == 200:
+                    releases = await resp.json()
+                    branch_releases = [
+                        r for r in releases
+                        if isinstance(r, dict) and r.get("target_commitish") == branch
+                    ]
+                    if branch_releases:
+                        data = branch_releases[0]
+                        return {
+                            "type": "release",
+                            "version": data["tag_name"],
+                            "download_ref": data["tag_name"],
+                            "release_url": data["html_url"],
+                            "release_summary": (data.get("body") or "")[:255] or None,
+                            "commit_sha": None,
+                            "remote_manifest_version": None,
+                        }
+
+            # 2. Tag (브랜치 무관)
+            url = f"{_GITHUB_API}/repos/{repo}/tags"
+            async with self._session.get(url, headers=self._headers()) as resp:
+                _check_auth(resp.status)
+                if resp.status == 403:
+                    _LOGGER.warning("resolve_latest(tags) %s — 접근 거부(403).", repo)
+                    return None
+                if resp.status == 200:
+                    tags = await resp.json()
+                    if tags:
+                        tag_name = tags[0]["name"]
+                        return {
+                            "type": "tag",
+                            "version": tag_name,
+                            "download_ref": tag_name,
+                            "release_url": f"https://github.com/{repo}/releases/tag/{tag_name}",
+                            "release_summary": None,
+                            "commit_sha": None,
+                            "remote_manifest_version": None,
+                        }
+
+            # 3. Branch HEAD
+            url = f"{_GITHUB_API}/repos/{repo}/branches/{branch}"
+            async with self._session.get(url, headers=self._headers()) as resp:
+                _check_auth(resp.status)
+                if resp.status == 200:
+                    data = await resp.json()
+                    commit_sha: str = data["commit"]["sha"]
+                    remote_version = await self._get_remote_manifest_version(
+                        repo, commit_sha, component_id
+                    )
+                    return {
+                        "type": "branch",
+                        "version": remote_version or commit_sha[:7],
+                        "download_ref": branch,
+                        "release_url": f"https://github.com/{repo}/commits/{branch}",
+                        "release_summary": None,
+                        "commit_sha": commit_sha,
+                        "remote_manifest_version": remote_version,
+                    }
+
+        except GitHubAuthError:
+            raise
+        except Exception as err:
+            _LOGGER.warning("Error resolving latest for %s@%s: %s", repo, branch, err)
+
+        _LOGGER.warning("resolve_latest: no version info found for %s@%s", repo, branch)
         return None
 
     async def _get_remote_manifest_version(

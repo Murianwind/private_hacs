@@ -174,6 +174,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         return {
             "branch": self._branch,
             "active": self._is_active,
+            "update_mode": self._repo_data.get("update_mode", "release"),
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
@@ -185,9 +186,10 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         return self.release_summary
 
     async def async_install(self, version: str | None, backup: bool, **kwargs) -> None:
-        await self.hass.services.async_call(
-            DOMAIN,
-            "install",
-            {"component_id": self._component_id, "branch": self._branch},
-            blocking=True,
+        from .services import _do_install
+        await _do_install(
+            self.hass,
+            self._component_id,
+            self._branch,
+            ref=version,
         )

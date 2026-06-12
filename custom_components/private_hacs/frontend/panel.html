@@ -145,13 +145,6 @@
   }
   .branch-row:last-child { border-bottom: none; }
   .branch-row.inactive { opacity: .5; }
-  /* 비활성 브랜치: 재설치·삭제 버튼 비활성화, 토글·등록해제는 허용 */
-  .branch-row.inactive .branch-actions .btn-success,
-  .branch-row.inactive .branch-actions .btn-warning,
-  .branch-row.inactive .branch-actions .btn-ghost:not(.btn-remove),
-  .branch-row.inactive .branch-actions .btn-danger:not(.btn-remove) {
-    pointer-events: none; opacity: .4;
-  }
 
   .branch-label {
     display: flex; align-items: center; gap: 6px;
@@ -414,6 +407,7 @@
   </div>
   <div class="header-actions">
     <button class="btn btn-sm" onclick="refreshAll()" id="refreshBtn">🔄 새로고침</button>
+    <button class="btn btn-sm" onclick="confirmRestart()" style="background:rgba(255,100,100,.25);color:#fff;border:1px solid rgba(255,100,100,.4);">⏻ HA 재시작</button>
     <button class="btn btn-sm" onclick="openAddModal()" style="background:rgba(255,255,255,.25);color:#fff;border:1px solid rgba(255,255,255,.4);">＋ 저장소 추가</button>
   </div>
 </div>
@@ -457,6 +451,16 @@
     <div class="modal-field" id="branchField" style="display:none">
       <label>브랜치 선택</label>
       <div class="branch-select-list" id="branchSelectList"></div>
+    </div>
+    <div class="modal-field" id="updateModeField" style="display:none">
+      <label>업데이트 방식</label>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button class="btn btn-sm" id="modeBtnRelease" onclick="selectUpdateMode('release')"
+          style="flex:1">📦 릴리즈</button>
+        <button class="btn btn-sm" id="modeBtnCommit" onclick="selectUpdateMode('commit')"
+          style="flex:1">🔀 커밋 추적</button>
+      </div>
+      <div class="hint" id="updateModeHint"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeAddModal()">취소</button>
@@ -636,6 +640,7 @@ async function fetchRepos() {
         release_url: a.release_url || null,
         has_update: hasUpdate, is_installed: !!installed,
         active,
+        update_mode: a.update_mode || 'release',
         version_source: a.version_source || (installed ? 'store' : 'none'),
         latest_type: a.latest_type || null,
         has_icon: a.has_icon || false,
@@ -772,7 +777,16 @@ function branchRowHTML(r) {
   // 릴리즈/태그 타입 여부 — 재설치 버튼 동작 결정
   const isReleaseType = r.latest_type === 'release' || r.latest_type === 'tag';
 
-  // 같은 component_id 브랜치가 1개뿐이면 토글 비활성화
+  // update_mode 배지 — default_branch(저장소 첫 등록 브랜치)가 아닌 브랜치만 변경 가능
+  const isDefaultBranch = repos.filter(r2 => r2.component_id === r.component_id)
+    .findIndex(r2 => r2.branch === r.branch) === 0;
+  const updateModeBadge = r.update_mode === 'commit'
+    ? '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:' + (isDefaultBranch ? 'default' : 'pointer') + '" '
+      + (isDefaultBranch ? '' : 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경"')
+      + '>커밋 추적</span>'
+    : '<span class="badge" style="background:rgba(3,169,244,.1);color:var(--primary);cursor:' + (isDefaultBranch ? 'default' : 'pointer') + '" '
+      + (isDefaultBranch ? '' : 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'commit\')" title="커밋 추적 모드로 변경"')
+      + '>릴리즈</span>';
   const isSingleBranch = repos.filter(repo => repo.component_id === r.component_id).length <= 1;
   const toggleDisabled = busy || isSingleBranch;
 
@@ -789,15 +803,20 @@ function branchRowHTML(r) {
   let actions = '';
   if (busy) {
     actions = '<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>';
+  } else if (!r.active) {
+    // 비활성 브랜치: 등록 해제 버튼만 표시 (규칙 4, 5)
+    actions = '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else if (!r.is_installed) {
+    // 활성 + 미설치: 설치 + 등록 해제 (규칙 6 — 활성화 팝업 취소 시 이 상태)
     actions = '<button class="btn btn-success btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬇ 설치</button>'
       + '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else if (r.has_update) {
+    // 활성 + 업데이트 있음
     actions = '<button class="btn btn-warning btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬆ 업데이트</button>'
       + '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>'
       + '<button class="btn btn-ghost btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else {
-    // 재설치: 릴리즈/태그 타입이면 릴리즈 선택 모달, 커밋 타입이면 confirm 후 재설치
+    // 활성 + 설치됨 + 최신: 재설치 + 컴포넌트 삭제 + 등록 해제
     const reinstallBtn = isReleaseType
       ? '<button class="btn btn-ghost btn-sm" onclick="openReleaseModal(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\',\'' + esc(r.installed_version || '') + '\')">🔄 재설치</button>'
       : '<button class="btn btn-ghost btn-sm" onclick="reinstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">🔄 재설치</button>';
@@ -809,7 +828,7 @@ function branchRowHTML(r) {
   return '<div class="branch-row' + (inactive ? ' inactive' : '') + '">'
     + toggleHtml
     + '<div class="branch-label"><span class="branch-name">' + esc(r.branch) + '</span></div>'
-    + '<div class="branch-meta">' + statusBadge + sourceBadge + installedBadge + latestBadge + releaseLink + '</div>'
+    + '<div class="branch-meta">' + statusBadge + sourceBadge + updateModeBadge + installedBadge + latestBadge + releaseLink + '</div>'
     + '<div class="branch-actions">' + actions + '</div>'
     + '</div>';
 }
@@ -871,15 +890,15 @@ async function toggleBranch(componentId, branch, active) {
     busyKeys.delete(key);
     renderAll();
 
-    // 2단계: 커밋 기반 저장소(branch 타입)이고 업데이트가 있을 때만 팝업
     const updated = repos.find(r => r.component_id === componentId && r.branch === branch);
-    const isBranchType = updated && updated.latest_type === 'branch';
-    const needsInstall = isBranchType && updated.has_update;
 
-    if (needsInstall) {
+    if (!updated) {
+      toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
+    } else if (!updated.is_installed) {
+      // 미설치 상태 — 설치 팝업
       showConfirm(
         '브랜치 설치',
-        name + ' (' + branch + ') 브랜치로 전환하시겠습니까?\n\n현재 설치된 파일과 다른 커밋입니다.\n지금 설치하면 해당 브랜치의 최신 커밋으로 파일이 교체됩니다.\n설치 후 HA를 재시작해야 적용됩니다.\n\n취소하면 활성화만 되고 나중에 수동으로 설치할 수 있습니다.',
+        name + ' (' + branch + ') 브랜치를 활성화했습니다.\n\n아직 설치되지 않은 브랜치입니다.\n지금 설치하시겠습니까?\n\n취소하면 나중에 수동으로 설치할 수 있습니다.',
         async () => {
           busyKeys.add(key); renderRepos();
           toast(name + ' (' + branch + ') 설치 중...', 'info');
@@ -893,15 +912,29 @@ async function toggleBranch(componentId, branch, active) {
             busyKeys.delete(key); renderRepos();
           }
         }
-        // 취소: 활성화만 된 상태, 업데이트 버튼으로 표시됨
+      );
+    } else if (updated.has_update) {
+      // 설치됐지만 업데이트 있음 — 업데이트 팝업
+      showConfirm(
+        '브랜치 업데이트',
+        name + ' (' + branch + ') 브랜치를 활성화했습니다.\n\n새로운 업데이트가 있습니다.\n지금 업데이트하시겠습니까?\n\n취소하면 나중에 수동으로 업데이트할 수 있습니다.',
+        async () => {
+          busyKeys.add(key); renderRepos();
+          toast(name + ' (' + branch + ') 업데이트 중...', 'info');
+          try {
+            await callService('private_hacs', 'install', { component_id: componentId, branch });
+            toast(name + ' (' + branch + ') 업데이트 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
+            repos = await fetchRepos(); renderAll();
+          } catch (err) {
+            toast('업데이트 실패: ' + err.message, 'error', 6000);
+          } finally {
+            busyKeys.delete(key); renderRepos();
+          }
+        }
       );
     } else {
-      // 최신 커밋과 일치하거나 릴리즈/태그 타입 — 팝업 없이 활성화 완료
-      if (updated && updated.has_update) {
-        toast(name + ' (' + branch + ') 활성화됨. 업데이트가 있습니다.', 'success', 5000);
-      } else {
-        toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
-      }
+      // 설치됐고 최신 — 팝업 없이 활성화 완료
+      toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
     }
   } catch (err) {
     toast('활성화 실패: ' + err.message, 'error', 6000);
@@ -909,6 +942,23 @@ async function toggleBranch(componentId, branch, active) {
   } finally {
     busyKeys.delete(key);
     renderRepos();
+  }
+}
+
+// ── 업데이트 모드 변경 ──
+async function setUpdateMode(componentId, branch, mode) {
+  const r = repos.find(r => r.component_id === componentId && r.branch === branch);
+  const name = r ? r.name : componentId;
+  const modeLabel = mode === 'commit' ? '커밋 추적' : '릴리즈';
+  try {
+    await callService('private_hacs', 'set_update_mode', {
+      component_id: componentId, branch, update_mode: mode,
+    });
+    if (r) r.update_mode = mode;
+    renderAll();
+    toast(name + ' (' + branch + ') 업데이트 모드: ' + modeLabel, 'success', 3000);
+  } catch (err) {
+    toast('모드 변경 실패: ' + err.message, 'error', 5000);
   }
 }
 
@@ -970,12 +1020,28 @@ async function removeRepo(componentId, branch, name) {
       try {
         await callService('private_hacs', 'remove_repo', { component_id: componentId, branch });
         toast(name + ' (' + branch + ') 등록 해제 완료.', 'success');
-        repos = repos.filter(r => !(r.component_id === componentId && r.branch === branch));
-        renderAll();
+        // 서버에서 최신 상태 읽기 — 자동 활성화 반영
+        await new Promise(r => setTimeout(r, 500));
+        repos = await fetchRepos(); renderAll();
       } catch (err) {
         toast('등록 해제 실패: ' + err.message, 'error', 6000);
       }
     });
+}
+
+async function confirmRestart() {
+  showConfirm(
+    'HA 재시작',
+    'Home Assistant를 재시작하시겠습니까?\n\n재시작 중에는 모든 자동화와 통합이 잠시 중단됩니다.',
+    async () => {
+      try {
+        await callService('homeassistant', 'restart', {});
+        toast('HA 재시작 요청을 보냈습니다. 잠시 후 연결이 끊길 수 있습니다.', 'info', 6000);
+      } catch (err) {
+        toast('재시작 실패: ' + err.message, 'error', 5000);
+      }
+    }
+  );
 }
 
 async function refreshAll() {
@@ -1149,17 +1215,28 @@ async function lookupRepo(repo) {
     const componentId = componentIds.length ? componentIds[0] : repo.split('/')[1].replace(/-/g,'_').toLowerCase();
     const allBranches = info.branches || [];
     const defaultBranch = info.default_branch || 'main';
+    const hasReleases = info.has_releases === true;
 
     // 이미 등록된 브랜치 목록 (같은 component_id 기준)
     const registeredBranches = new Set(
       repos.filter(r => r.component_id === componentId).map(r => r.branch)
     );
 
+    // 릴리즈가 있는 저장소라면 모드 선택 가능
+    // - 첫 등록이라도 비기본 브랜치(non-default)를 선택하면 표시
+    // - 기본 브랜치(main 등)는 릴리즈 고정 (모드 선택 없음)
+    // - 이미 다른 브랜치가 등록된 경우도 동일
+    const showModeSelectForBranch = (branch) =>
+      hasReleases && branch !== defaultBranch;
+
     _pendingRepoInfo = {
       repo, name: info.name || repo.split('/')[1],
       component_id: componentId,
       branch: null,
       defaultBranch,
+      hasReleases,
+      showModeSelectForBranch,
+      update_mode: null,
     };
 
     $el('previewName').textContent = info.full_name || repo;
@@ -1205,19 +1282,63 @@ function selectBranchItem(el) {
   el.classList.add('selected');
   if (_pendingRepoInfo && branch) {
     _pendingRepoInfo.branch = branch;
-    $el('addSubmitBtn').disabled = false;
+
+    // 릴리즈 있는 저장소의 비기본 브랜치 → 모드 선택 표시
+    const needsModeSelect = _pendingRepoInfo.hasReleases && branch !== _pendingRepoInfo.defaultBranch;
+
+    if (needsModeSelect) {
+      $el('updateModeField').style.display = 'block';
+      // 초기: 둘 다 흐리게
+      const btnR = $el('modeBtnRelease');
+      const btnC = $el('modeBtnCommit');
+      if (btnR) btnR.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+      if (btnC) btnC.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+      $el('updateModeHint').textContent = '업데이트 방식을 선택해주세요.';
+      _pendingRepoInfo.update_mode = null;
+      $el('addSubmitBtn').disabled = true;
+    } else {
+      $el('updateModeField').style.display = 'none';
+      // 기본 브랜치 → release, 릴리즈 없는 저장소 → commit
+      _pendingRepoInfo.update_mode = _pendingRepoInfo.hasReleases ? 'release' : 'commit';
+      $el('addSubmitBtn').disabled = false;
+    }
   }
+}
+
+function selectUpdateMode(mode) {
+  if (!_pendingRepoInfo) return;
+  _pendingRepoInfo.update_mode = mode;
+  const btnRelease = $el('modeBtnRelease');
+  const btnCommit = $el('modeBtnCommit');
+  const hint = $el('updateModeHint');
+  if (mode === 'release') {
+    btnRelease.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    btnCommit.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+    hint.textContent = '릴리즈/태그 기준으로 업데이트합니다.';
+  } else {
+    btnRelease.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+    btnCommit.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    hint.textContent = '해당 브랜치의 커밋 기준으로 업데이트합니다.';
+  }
+  // 모드 선택 완료 → 추가 버튼 활성화
+  if (_pendingRepoInfo.branch) $el('addSubmitBtn').disabled = false;
 }
 
 async function submitAddRepo() {
   if (!_pendingRepoInfo || !_pendingRepoInfo.branch) {
     toast('브랜치를 선택해주세요.', 'warning'); return;
   }
-  const { repo, name, component_id, branch } = _pendingRepoInfo;
+  if (_pendingRepoInfo.hasReleases && _pendingRepoInfo.branch !== _pendingRepoInfo.defaultBranch && !_pendingRepoInfo.update_mode) {
+    toast('업데이트 방식을 선택해주세요.', 'warning'); return;
+  }
+  const { repo, name, component_id, branch, update_mode } = _pendingRepoInfo;
   const btn = $el('addSubmitBtn');
   btn.disabled = true; btn.textContent = '추가 중...';
   try {
-    await callService('private_hacs', 'add_repo', { repo, name, component_id, branch });
+    await callService('private_hacs', 'add_repo', {
+      repo, name, component_id, branch,
+      update_mode: update_mode || 'release',
+    });
     closeAddModal();
     toast(name + ' (' + branch + ') 저장소가 추가됐습니다. 잠시 후 목록에 표시됩니다.', 'success', 6000);
     await new Promise(r => setTimeout(r, 5000));
@@ -1241,6 +1362,8 @@ function closeAddModal() {
   if (bf) bf.style.display = 'none';
   const bsl = $el('branchSelectList');
   if (bsl) bsl.innerHTML = '';
+  const umf = $el('updateModeField');
+  if (umf) umf.style.display = 'none';
 }
 
 // ── Confirm / Toast ──
