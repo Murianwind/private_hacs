@@ -1222,16 +1222,21 @@ async function lookupRepo(repo) {
       repos.filter(r => r.component_id === componentId).map(r => r.branch)
     );
 
-    // 릴리즈가 있는 저장소이고 같은 component_id 기존 브랜치가 있을 때만 모드 선택 표시
-    const showModeSelect = registeredBranches.size > 0 && hasReleases;
+    // 릴리즈가 있는 저장소라면 모드 선택 가능
+    // - 첫 등록이라도 비기본 브랜치(non-default)를 선택하면 표시
+    // - 기본 브랜치(main 등)는 릴리즈 고정 (모드 선택 없음)
+    // - 이미 다른 브랜치가 등록된 경우도 동일
+    const showModeSelectForBranch = (branch) =>
+      hasReleases && branch !== defaultBranch;
 
     _pendingRepoInfo = {
       repo, name: info.name || repo.split('/')[1],
       component_id: componentId,
       branch: null,
       defaultBranch,
-      hasExisting: showModeSelect,
-      update_mode: showModeSelect ? 'commit' : (registeredBranches.size > 0 ? 'commit' : 'release'),
+      hasReleases,
+      showModeSelectForBranch,
+      update_mode: null,
     };
 
     $el('previewName').textContent = info.full_name || repo;
@@ -1277,18 +1282,24 @@ function selectBranchItem(el) {
   el.classList.add('selected');
   if (_pendingRepoInfo && branch) {
     _pendingRepoInfo.branch = branch;
-    if (_pendingRepoInfo.hasExisting) {
+
+    // 릴리즈 있는 저장소의 비기본 브랜치 → 모드 선택 표시
+    const needsModeSelect = _pendingRepoInfo.hasReleases && branch !== _pendingRepoInfo.defaultBranch;
+
+    if (needsModeSelect) {
       $el('updateModeField').style.display = 'block';
-      // 처음 선택 시 둘 다 흐리게 → 아무것도 선택 안 된 상태
+      // 초기: 둘 다 흐리게
       const btnR = $el('modeBtnRelease');
       const btnC = $el('modeBtnCommit');
       if (btnR) btnR.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
       if (btnC) btnC.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
       $el('updateModeHint').textContent = '업데이트 방식을 선택해주세요.';
-      _pendingRepoInfo.update_mode = null; // 선택 전까지 null
-      $el('addSubmitBtn').disabled = true;  // 모드 선택 전까지 추가 불가
+      _pendingRepoInfo.update_mode = null;
+      $el('addSubmitBtn').disabled = true;
     } else {
       $el('updateModeField').style.display = 'none';
+      // 기본 브랜치 → release, 릴리즈 없는 저장소 → commit
+      _pendingRepoInfo.update_mode = _pendingRepoInfo.hasReleases ? 'release' : 'commit';
       $el('addSubmitBtn').disabled = false;
     }
   }
@@ -1317,7 +1328,7 @@ async function submitAddRepo() {
   if (!_pendingRepoInfo || !_pendingRepoInfo.branch) {
     toast('브랜치를 선택해주세요.', 'warning'); return;
   }
-  if (_pendingRepoInfo.hasExisting && !_pendingRepoInfo.update_mode) {
+  if (_pendingRepoInfo.hasReleases && _pendingRepoInfo.branch !== _pendingRepoInfo.defaultBranch && !_pendingRepoInfo.update_mode) {
     toast('업데이트 방식을 선택해주세요.', 'warning'); return;
   }
   const { repo, name, component_id, branch, update_mode } = _pendingRepoInfo;
