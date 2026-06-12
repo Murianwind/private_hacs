@@ -208,7 +208,7 @@ async def _do_install(
     download_ref = ref if ref else latest["download_ref"]
     install_version = ref if ref else latest["version"]
 
-    _LOGGER.info("Installing %s from %s @ %s", entry_key, repo, download_ref)
+    _LOGGER.debug("Installing %s from %s @ %s", entry_key, repo, download_ref)
 
     try:
         await github.download_and_install(hass, repo, component_id, download_ref)
