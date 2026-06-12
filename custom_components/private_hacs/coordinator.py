@@ -10,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .const import DEFAULT_SCAN_INTERVAL_HOURS, DOMAIN
+from .const import CONF_REPOS, DEFAULT_SCAN_INTERVAL_HOURS, DOMAIN
 from .github import GitHubClient
 from .store import RepositoryStore
 
@@ -19,6 +19,11 @@ _LOGGER = logging.getLogger(__name__)
 # update_mode 값
 UPDATE_MODE_RELEASE = "release"   # 릴리즈/태그 기준 (기본값)
 UPDATE_MODE_COMMIT  = "commit"    # 브랜치 HEAD 커밋 기준
+
+
+def _strip_v(v: str) -> str:
+    """버전 문자열에서 선행 'v'를 제거하여 정규화합니다. (예: v1.0 → 1.0)"""
+    return v.lstrip("v") if v else v
 
 
 def make_entry_key(component_id: str, branch: str) -> str:
@@ -129,7 +134,7 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
 
             # latest가 branch 타입인데 update_mode가 release인 경우
-            # → 릴리즈/태그가 없는 저장소임을 확인 — config에 commit으로 자동 저장
+            # → 릴리즈/태그가 없는 저장소 확인 — config entry에 commit으로 영구 저장
             if (
                 latest
                 and latest.get("type") == "branch"
@@ -140,11 +145,24 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                     component_id, branch,
                 )
                 update_mode = UPDATE_MODE_COMMIT
-                # repos 리스트 업데이트 (다음 폴링부터 바로 commit 모드 사용)
+                # repos 리스트와 config entry 모두 업데이트 (재시작 후에도 유지)
                 for r in self.repos:
                     if r["component_id"] == component_id and r.get("branch", "main") == branch:
                         r["update_mode"] = UPDATE_MODE_COMMIT
                         break
+                # config entry 갱신 (비동기 — fire and forget으로 처리)
+                entries = self.hass.config_entries.async_entries(DOMAIN)
+                if entries:
+                    entry = entries[0]
+                    updated_repos = [
+                        {**r, "update_mode": UPDATE_MODE_COMMIT}
+                        if r["component_id"] == component_id and r.get("branch", "main") == branch
+                        else r
+                        for r in entry.data.get(CONF_REPOS, [])
+                    ]
+                    self.hass.config_entries.async_update_entry(
+                        entry, data={**entry.data, CONF_REPOS: updated_repos}
+                    )
 
             results[entry_key] = {
                 "entry_key": entry_key,
@@ -182,8 +200,6 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
         latest_type = latest.get("type")
 
         if latest_type in ("release", "tag"):
-            def _strip_v(v: str) -> str:
-                return v.lstrip("v") if v else v
             return _strip_v(str(installed_version)) != _strip_v(str(latest.get("version", "")))
 
         if latest_type == "branch":
