@@ -777,15 +777,13 @@ function branchRowHTML(r) {
   // 릴리즈/태그 타입 여부 — 재설치 버튼 동작 결정
   const isReleaseType = r.latest_type === 'release' || r.latest_type === 'tag';
 
-  // update_mode 배지 — default_branch(저장소 첫 등록 브랜치)가 아닌 브랜치만 변경 가능
-  const isDefaultBranch = repos.filter(r2 => r2.component_id === r.component_id)
-    .findIndex(r2 => r2.branch === r.branch) === 0;
+  // update_mode 배지 — 모든 브랜치에서 클릭으로 모드 변경 가능
   const updateModeBadge = r.update_mode === 'commit'
-    ? '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:' + (isDefaultBranch ? 'default' : 'pointer') + '" '
-      + (isDefaultBranch ? '' : 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경"')
+    ? '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:pointer" '
+      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경"'
       + '>커밋 추적</span>'
-    : '<span class="badge" style="background:rgba(3,169,244,.1);color:var(--primary);cursor:' + (isDefaultBranch ? 'default' : 'pointer') + '" '
-      + (isDefaultBranch ? '' : 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'commit\')" title="커밋 추적 모드로 변경"')
+    : '<span class="badge" style="background:rgba(3,169,244,.1);color:var(--primary);cursor:pointer" '
+      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'commit\')" title="커밋 추적 모드로 변경"'
       + '>릴리즈</span>';
   const isSingleBranch = repos.filter(repo => repo.component_id === r.component_id).length <= 1;
   const toggleDisabled = busy || isSingleBranch;
