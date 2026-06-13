@@ -1,6 +1,15 @@
 """공통 픽스처 및 헬퍼."""
 from __future__ import annotations
 
+import sys
+import os
+
+# custom_components/private_hacs/ 를 모듈 검색 경로에 추가
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_COMPONENT = os.path.join(_ROOT, "custom_components", "private_hacs")
+if _COMPONENT not in sys.path:
+    sys.path.insert(0, _COMPONENT)
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
