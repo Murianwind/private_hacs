@@ -10,8 +10,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, call
 
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# sys.path는 conftest.py에서 설정됩니다.
 
 from coordinator import (
     PrivateHacsCoordinator,
