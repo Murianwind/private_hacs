@@ -14,8 +14,7 @@ from contextlib import asynccontextmanager
 from homeassistant.exceptions import ConfigEntryAuthFailed
 
 # 테스트 대상
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# sys.path는 conftest.py에서 설정됩니다.
 
 from github import GitHubClient, GitHubAuthError
 
