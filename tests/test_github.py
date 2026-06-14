@@ -16,7 +16,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 # 테스트 대상
 # sys.path는 conftest.py에서 설정됩니다.
 
-from github import GitHubClient, GitHubAuthError
+from custom_components.private_hacs.github import GitHubClient, GitHubAuthError
 
 
 # ──────────────────────────────────────────────
