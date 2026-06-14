@@ -131,16 +131,21 @@ def make_repo_item(
 # hass.data[DOMAIN][entry_id] 구조를 정확히 재현
 # ──────────────────────────────────────────────
 
-def make_hass_for_services(repos, store, github, coordinator=None):
+def make_hass_for_services(repos, store, github, coordinator=None, coord_data=None):
     """
     services.py의 _get_entry_data(hass) 가 동작하도록
     hass.data[DOMAIN][entry_id] = entry_data 구조를 셋업합니다.
+
+    coord_data: coordinator.data 에 넣을 dict (entry_key → repo_data)
     """
     from custom_components.private_hacs.const import DOMAIN, CONF_REPOS
 
     coord = coordinator or MagicMock()
     coord.repos = list(repos)
-    coord.data = {}
+    if coord_data is not None:
+        coord.data = coord_data
+    elif not isinstance(coord.data, dict):
+        coord.data = {}
     coord.async_request_refresh = AsyncMock()
     coord.async_update_listeners = MagicMock()
 
@@ -157,8 +162,11 @@ def make_hass_for_services(repos, store, github, coordinator=None):
     hass = make_hass()
     hass.data[DOMAIN] = {"test_entry_id": entry_data}
     hass.config_entries.async_entries = MagicMock(return_value=[entry])
-    hass.config_entries.async_update_entry = MagicMock(
-        side_effect=lambda e, **kwargs: setattr(e, "data", kwargs.get("data", e.data))
-    )
+
+    def _update_entry(e, **kwargs):
+        if "data" in kwargs:
+            e.data = kwargs["data"]
+
+    hass.config_entries.async_update_entry = MagicMock(side_effect=_update_entry)
 
     return hass, entry, entry_data, coord
