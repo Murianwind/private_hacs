@@ -364,8 +364,7 @@ class TestAsyncSetupEntry:
 
         entry = MagicMock()
         entry.entry_id = "test_entry_id"
-        entry.data = {DOMAIN: repos, "repos": repos}
-        entry.data.get = MagicMock(return_value=repos)
+        entry.data = {CONF_REPOS: repos}  # 실제 dict 사용
 
         hass.data.setdefault(DOMAIN, {})
         hass.data[DOMAIN]["test_entry_id"] = {
