@@ -5,7 +5,7 @@ on:
     branches: [ "**" ]
   pull_request:
     branches: [ "**" ]
-  workflow_dispatch:  # 수동 실행
+  workflow_dispatch:  # 수동 실행 — GitHub Actions 탭에서 Run workflow 클릭
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -27,18 +27,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-test.txt
 
       - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install pytest pytest-asyncio pytest-homeassistant-custom-component
-
-          if [ -f custom_components/private_hacs/manifest.json ]; then
-            REQ_LIST=$(jq -r '.requirements[]?' custom_components/private_hacs/manifest.json)
-            if [ -n "$REQ_LIST" ]; then
-              pip install $REQ_LIST
-            fi
-          fi
+          python -m pip install --upgrade pip --quiet
+          pip install -r requirements-test.txt --quiet
 
       - name: Run Pytest
         run: |
@@ -47,7 +42,7 @@ jobs:
             --no-header \
             --tb=short \
             --color=no \
-            --durations=10 \
+            --durations=5 \
             -p no:warnings \
             -v \
             2>&1 | tee pytest-output.txt
@@ -58,7 +53,8 @@ jobs:
       - name: Publish Test Summary
         if: always()
         run: |
-          SUMMARY_LINE=$(grep -E "[0-9]+ (passed|failed|error)" pytest-output.txt | tail -1 || true)
+          set +e  # grep이 매칭 없을 때 exit 1 반환해도 스크립트 계속 실행
+          SUMMARY_LINE=$(grep -E "[0-9]+ (passed|failed|error)" pytest-output.txt | tail -1 || echo "결과 없음")
 
           # ── 헤더 + 요약 ──────────────────────────────────────────────
           if [ "${PYTEST_EXIT:-0}" = "0" ]; then
@@ -78,10 +74,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           for f in test_github test_coordinator test_services test_store; do
-            TOTAL=$(grep -c "tests/${f}.py::" pytest-output.txt 2>/dev/null || echo 0) || true
-            PASS=$(grep "tests/${f}.py::.*PASSED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ' || echo 0)
-            FAIL=$(grep "tests/${f}.py::.*FAILED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ' || echo 0)
-            if [ "$FAIL" -gt "0" ]; then
+            TOTAL=$(grep "tests/${f}.py::" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            PASS=$(grep "tests/${f}.py::.*PASSED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            FAIL=$(grep "tests/${f}.py::.*FAILED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            if [ "${TOTAL}" = "0" ]; then
+              echo "⚠️  ${f}.py  — 수집 실패 (import 오류 등)"
+            elif [ "${FAIL}" -gt "0" ] 2>/dev/null; then
               echo "❌ ${f}.py  — ${PASS}/${TOTAL} 통과  (${FAIL} 실패)"
             else
               echo "✅ ${f}.py  — ${PASS}/${TOTAL} 통과"
@@ -96,36 +94,48 @@ jobs:
           echo "<summary>📋 실행된 테스트 전체 목록 (클릭하여 펼치기)</summary>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          grep -E "PASSED|FAILED|ERROR|SKIPPED" pytest-output.txt \
-            | grep "::" \
-            | sed 's/  *\[[ 0-9]*%\]$//' \
-            | sed 's/ PASSED$/  ✓/' \
-            | sed 's/ FAILED$/  ✗  ← FAILED/' \
-            | sed 's/ ERROR$/  !  ← ERROR/' \
-            | sed 's/ SKIPPED$/  (skipped)/' \
-            >> $GITHUB_STEP_SUMMARY || echo "(없음)" >> $GITHUB_STEP_SUMMARY
+          {
+            grep -E "PASSED|FAILED|ERROR|SKIPPED" pytest-output.txt \
+              | grep "::" \
+              | sed 's/  *\[[ 0-9]*%\]$//' \
+              | sed 's/ PASSED$/  ✓/' \
+              | sed 's/ FAILED$/  ✗  ← FAILED/' \
+              | sed 's/ ERROR$/  !  ← ERROR/' \
+              | sed 's/ SKIPPED$/  (skipped)/'
+          } >> $GITHUB_STEP_SUMMARY || echo "(없음)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
+          # ── 수집 오류 ───────────────────────────────────────────────
+          COLLECT_ERRORS=$(grep "ERROR collecting" pytest-output.txt 2>/dev/null || true)
+          if [ -n "$COLLECT_ERRORS" ]; then
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ 수집 오류 (import 실패 등)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A3 "ERROR collecting" pytest-output.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           # ── 실패 상세 ───────────────────────────────────────────────
-          FAIL_COUNT=$(grep -cE "^(FAILED|ERROR) " pytest-output.txt 2>/dev/null || echo 0)
-          if [ "$FAIL_COUNT" -gt "0" ]; then
+          FAIL_COUNT=$(grep -cE "^FAILED " pytest-output.txt 2>/dev/null || echo 0)
+          if [ "${FAIL_COUNT}" -gt "0" ] 2>/dev/null; then
             echo "---" >> $GITHUB_STEP_SUMMARY
             echo "### ❌ 실패 상세" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
             echo "**실패한 테스트:**" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            grep -E "^(FAILED|ERROR) " pytest-output.txt >> $GITHUB_STEP_SUMMARY || true
+            grep "^FAILED " pytest-output.txt >> $GITHUB_STEP_SUMMARY || true
             echo '```' >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
 
             echo "**Traceback (파일:라인):**" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             awk '
-              /^_{5,}/ { in_fail=1; block=""; print ""; print; next }
-              in_fail && /^(FAILED|ERROR|={5,})/ { in_fail=0; next }
+              /^_{5,}/ { in_fail=1; print ""; print; next }
+              in_fail && /^(FAILED|={5,})/ { in_fail=0; next }
               in_fail && /^[[:space:]]*(tests|custom_components)\/.*\.py:[0-9]+:/ { print; next }
               in_fail && /^E[[:space:]]/ { print; next }
             ' pytest-output.txt >> $GITHUB_STEP_SUMMARY || true
@@ -136,21 +146,20 @@ jobs:
             echo '```' >> $GITHUB_STEP_SUMMARY
             SRC=$(grep -oE "custom_components/[^ ]+\.py:[0-9]+" pytest-output.txt | sort -u || true)
             TEST=$(grep -oE "tests/[^ ]+\.py:[0-9]+" pytest-output.txt | sort -u || true)
-
             if [ -n "$SRC" ]; then
-              echo "📦 소스 코드 문제 (custom_components/):" >> $GITHUB_STEP_SUMMARY
-              echo "$SRC" >> $GITHUB_STEP_SUMMARY
-              echo "  → coordinator.py / github.py / services.py 등 실제 코드 버그일 가능성" >> $GITHUB_STEP_SUMMARY
+              echo "📦 소스 코드 문제 (custom_components/):"
+              echo "$SRC"
+              echo "  → coordinator.py / github.py / services.py 등 실제 코드 버그일 가능성"
             else
-              echo "📦 소스 코드 문제: 없음" >> $GITHUB_STEP_SUMMARY
+              echo "📦 소스 코드 문제: 없음"
             fi
-            echo "" >> $GITHUB_STEP_SUMMARY
+            echo ""
             if [ -n "$TEST" ]; then
-              echo "🧪 테스트 코드 문제 (tests/):" >> $GITHUB_STEP_SUMMARY
-              echo "$TEST" >> $GITHUB_STEP_SUMMARY
-              echo "  → 테스트 assertion 또는 mock 설정 문제일 가능성" >> $GITHUB_STEP_SUMMARY
+              echo "🧪 테스트 코드 문제 (tests/):"
+              echo "$TEST"
+              echo "  → 테스트 assertion 또는 mock 설정 문제일 가능성"
             else
-              echo "🧪 테스트 코드 문제: 없음" >> $GITHUB_STEP_SUMMARY
+              echo "🧪 테스트 코드 문제: 없음"
             fi
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
