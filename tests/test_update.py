@@ -11,7 +11,7 @@ from custom_components.private_hacs.coordinator import (
     PrivateHacsCoordinator, make_entry_key
 )
 from custom_components.private_hacs.update import PrivateHacsUpdateEntity
-from custom_components.private_hacs.const import DOMAIN
+from custom_components.private_hacs.const import DOMAIN, CONF_REPOS
 from conftest import make_store, make_repo_item
 
 
@@ -341,8 +341,70 @@ class TestReleaseNotes:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# async_install
+# async_setup_entry
 # ══════════════════════════════════════════════════════════════════════
+
+class TestAsyncSetupEntry:
+
+    @pytest.mark.asyncio
+    async def test_given_repos_registered__when_setup__then_entities_added(self, hass):
+        """
+        Given: 저장소 2개 등록
+        When:  async_setup_entry 호출
+        Then:  async_add_entities에 엔티티 2개 전달
+        """
+        from custom_components.private_hacs.update import async_setup_entry
+        from custom_components.private_hacs.coordinator import PrivateHacsCoordinator
+
+        repos = [make_repo_item(branch="main"), make_repo_item(branch="test")]
+        store = make_store()
+        github = AsyncMock()
+        coord = PrivateHacsCoordinator(hass=hass, repos=repos, github=github, store=store)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
+
+        entry = MagicMock()
+        entry.entry_id = "test_entry_id"
+        entry.data = {DOMAIN: repos, "repos": repos}
+        entry.data.get = MagicMock(return_value=repos)
+
+        hass.data.setdefault(DOMAIN, {})
+        hass.data[DOMAIN]["test_entry_id"] = {
+            "coordinator": coord,
+            "update_entities": {},
+        }
+
+        added = []
+        def _add_entities(entities, **kwargs):
+            added.extend(list(entities))
+
+        await async_setup_entry(hass, entry, _add_entities)
+
+        assert len(added) == 2
+
+
+# ══════════════════════════════════════════════════════════════════════
+# async_will_remove_from_hass
+# ══════════════════════════════════════════════════════════════════════
+
+class TestAsyncWillRemoveFromHass:
+
+    @pytest.mark.asyncio
+    async def test_given_entity_registered__when_removed__then_cleaned_from_dict(self, hass):
+        """
+        Given: update_entities에 엔티티 등록됨
+        When:  async_will_remove_from_hass 호출
+        Then:  update_entities에서 제거됨
+        """
+        repo_cfg = make_repo_item()
+        entry_key = make_entry_key("private_hacs", "main")
+        entity = _make_entity(hass, repo_cfg, {entry_key: _repo_data_release()})
+
+        # 등록 확인
+        assert entry_key in hass.data[DOMAIN]["test_entry_id"]["update_entities"]
+
+        await entity.async_will_remove_from_hass()
+
+        assert entry_key not in hass.data[DOMAIN]["test_entry_id"].get("update_entities", {})
 
 class TestAsyncInstall:
 
