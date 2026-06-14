@@ -4,11 +4,28 @@ from __future__ import annotations
 import sys
 import os
 
-# custom_components/private_hacs/ 를 모듈 검색 경로에 추가
+# 저장소 루트를 sys.path에 추가
+# custom_components/private_hacs/ 가 패키지로 인식되도록
+# import 시 custom_components.private_hacs.coordinator 형태로 사용
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_COMPONENT = os.path.join(_ROOT, "custom_components", "private_hacs")
-if _COMPONENT not in sys.path:
-    sys.path.insert(0, _COMPONENT)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+
+# custom_components.private_hacs 를 짧은 이름으로 접근하기 위한 alias
+# 테스트 파일에서 `from custom_components.private_hacs.coordinator import ...` 사용
+import importlib, types
+
+def _alias(short: str) -> None:
+    """custom_components.private_hacs.<short> 를 <short> 이름으로도 접근 가능하게."""
+    full = f"custom_components.private_hacs.{short}"
+    mod = importlib.import_module(full)
+    sys.modules[short] = mod
+
+for _mod in ["const", "helpers", "store", "github", "coordinator", "services", "update"]:
+    try:
+        _alias(_mod)
+    except Exception:
+        pass
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
