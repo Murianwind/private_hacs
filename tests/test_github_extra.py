@@ -148,15 +148,15 @@ async def test_get_releases__given_no_releases__when_called__then_returns_empty(
 
 
 @pytest.mark.asyncio
-async def test_get_releases__given_auth_error__when_called__then_raises():
+async def test_get_releases__given_auth_error__when_called__then_returns_empty():
     """
     Given: 인증 실패 (401)
     When:  get_releases 호출
-    Then:  GitHubAuthError 발생
+    Then:  빈 목록 반환 (get_releases는 예외 없이 빈 목록 반환)
     """
     client = _make_client([(401, {})])
-    with pytest.raises(GitHubAuthError):
-        await client.get_releases("Murianwind/private_hacs")
+    result = await client.get_releases("Murianwind/private_hacs")
+    assert result == []
 
 
 # ══════════════════════════════════════════════════════════════════════
