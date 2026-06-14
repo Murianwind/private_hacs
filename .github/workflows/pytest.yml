@@ -2,12 +2,17 @@ name: Pytest
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "**" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "**" ]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# 같은 브랜치에 연속 push가 있으면 이전 실행을 취소하고 마지막 push만 실행
+concurrency:
+  group: pytest-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -60,6 +65,8 @@ jobs:
           else
             echo "### ❌ Pytest 결과: 실패 있음" >> $GITHUB_STEP_SUMMARY
           fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**브랜치:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**${SUMMARY_LINE}**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
