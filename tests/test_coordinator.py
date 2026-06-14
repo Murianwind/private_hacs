@@ -117,7 +117,23 @@ class TestComputeHasUpdate:
         latest = {"type": "branch", "commit_sha": None, "remote_manifest_version": "2.2.0"}
         assert _compute(latest, "2.1.0", None) is True
 
-    def test_given_no_installed_version__when_computed__then_no_update(self):
+    def test_given_branch_type_manifest_version_same__when_computed__then_falls_to_sha(self):
+        """
+        Given: remote_manifest_version == installed_version (같은 버전)
+        When:  _compute_has_update 호출
+        Then:  SHA 비교로 fallthrough — SHA 없으면 False
+        """
+        latest = {"type": "branch", "commit_sha": None, "remote_manifest_version": "2.0.0"}
+        assert _compute(latest, "2.0.0", None) is False
+
+    def test_given_branch_type_sha_one_side_none__when_computed__then_no_update(self):
+        """
+        Given: remote_commit_sha 있지만 installed_commit_sha 없음
+        When:  _compute_has_update 호출
+        Then:  False (한쪽만 있으면 비교 불가)
+        """
+        latest = {"type": "branch", "commit_sha": "abc123", "remote_manifest_version": None}
+        assert _compute(latest, "2.0.0", None) is False
         """
         Given: installed_version 없음 (미설치)
         When:  _compute_has_update 호출
@@ -361,12 +377,37 @@ class TestAutoSwitchUpdateMode:
         repo_item = make_repo_item(update_mode="release")
         repos = [repo_item]
         coord = _make_coord(hass, repos, github)
+        # config entry 없음 — entries 빈 케이스 (149→154 분기)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
 
         result = await coord._async_update_data()
         key = make_entry_key("private_hacs", "main")
 
         assert result[key]["update_mode"] == UPDATE_MODE_COMMIT
         assert repos[0]["update_mode"] == UPDATE_MODE_COMMIT
+
+    @pytest.mark.asyncio
+    async def test_given_release_mode_no_releases_with_entry__when_polled__then_entry_updated(self, hass):
+        """
+        Given: update_mode=release, branch 타입 반환, config entry 있음
+        When:  _async_update_data 실행
+        Then:  config entry도 commit으로 갱신 (150→149 분기)
+        """
+        github = AsyncMock()
+        github.resolve_latest = AsyncMock(return_value=_commit_latest())
+        repo_item = make_repo_item(update_mode="release")
+        repos = [repo_item]
+        coord = _make_coord(hass, repos, github)
+
+        # config entry 있음
+        entry = MagicMock()
+        entry.data = {"repos": list(repos)}
+        hass.config_entries.async_entries = MagicMock(return_value=[entry])
+        hass.config_entries.async_update_entry = MagicMock()
+
+        await coord._async_update_data()
+
+        hass.config_entries.async_update_entry.assert_called_once()
 
 
 class TestInactiveBranch:
