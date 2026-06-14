@@ -62,7 +62,7 @@ class TestDoInstall:
         When:  _do_install 호출
         Then:  store에 installed_version="v2.0.0" 저장
         """
-        from services import _do_install
+        from custom_components.private_hacs.services import _do_install
 
         store = make_store()
         github = AsyncMock()
@@ -91,9 +91,9 @@ class TestDoInstall:
         )
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             await _do_install(hass, "private_hacs", "main")
 
         store.async_set_branch.assert_called()
@@ -109,7 +109,7 @@ class TestDoInstall:
         When:  _do_install 호출
         Then:  store에 installed_commit_sha 저장
         """
-        from services import _do_install
+        from custom_components.private_hacs.services import _do_install
 
         store = make_store()
         github = AsyncMock()
@@ -139,9 +139,9 @@ class TestDoInstall:
         )
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             await _do_install(hass, "private_hacs", "main")
 
         # SHA 저장 확인
@@ -156,7 +156,7 @@ class TestDoInstall:
         When:  test 브랜치 설치
         Then:  main의 installed_version/sha가 None으로 초기화
         """
-        from services import _do_install
+        from custom_components.private_hacs.services import _do_install
 
         store = make_store({
             ("private_hacs", "main"): {
@@ -191,9 +191,9 @@ class TestDoInstall:
         )
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             await _do_install(hass, "private_hacs", "test")
 
         # main 브랜치 초기화 호출 확인
@@ -210,7 +210,7 @@ class TestDoInstall:
         When:  _do_install(ref="v1.0.0") 호출
         Then:  installed_version="v1.0.0", installed_commit_sha=None
         """
-        from services import _do_install
+        from custom_components.private_hacs.services import _do_install
 
         store = make_store()
         github = AsyncMock()
@@ -237,9 +237,9 @@ class TestDoInstall:
         )
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             await _do_install(hass, "private_hacs", "main", ref="v1.0.0")
 
         all_calls = store.async_set_branch.call_args_list
@@ -261,7 +261,7 @@ class TestDoRemoveRepo:
         When:  _do_remove_repo("private_hacs", "main") 호출
         Then:  config entry에서 해당 브랜치 제거
         """
-        from services import _do_remove_repo
+        from custom_components.private_hacs.services import _do_remove_repo
 
         repos = [make_repo_item(branch="main", active=True)]
         store = make_store()
@@ -270,9 +270,9 @@ class TestDoRemoveRepo:
         hass, entry, ed = _make_hass_with_entry(repos, store, github)
         entry.data = {"repos": list(repos)}
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services.er.async_get", return_value=MagicMock(
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services.er.async_get", return_value=MagicMock(
                  async_get_entity_id=MagicMock(return_value=None)
              )):
             await _do_remove_repo(hass, "private_hacs", "main")
@@ -288,7 +288,7 @@ class TestDoRemoveRepo:
         When:  _do_remove_repo("private_hacs", "main") 호출
         Then:  test 브랜치 자동 활성화
         """
-        from services import _do_remove_repo
+        from custom_components.private_hacs.services import _do_remove_repo
 
         repos = [
             make_repo_item(branch="main", active=True),
@@ -306,9 +306,9 @@ class TestDoRemoveRepo:
         entry.data = {"repos": list(repos)}
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services.er.async_get", return_value=MagicMock(
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services.er.async_get", return_value=MagicMock(
                  async_get_entity_id=MagicMock(return_value=None)
              )):
             await _do_remove_repo(hass, "private_hacs", "main")
@@ -324,7 +324,7 @@ class TestDoRemoveRepo:
         When:  _do_remove_repo 호출
         Then:  HomeAssistantError 발생
         """
-        from services import _do_remove_repo
+        from custom_components.private_hacs.services import _do_remove_repo
 
         repos = [make_repo_item(branch="main")]
         store = make_store()
@@ -332,8 +332,8 @@ class TestDoRemoveRepo:
         hass, entry, ed = _make_hass_with_entry(repos, store, github)
         entry.data = {"repos": list(repos)}
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed):
             with pytest.raises(HomeAssistantError):
                 await _do_remove_repo(hass, "private_hacs", "nonexistent")
 
@@ -351,7 +351,7 @@ class TestDoSetUpdateMode:
         When:  _do_set_update_mode("commit") 호출
         Then:  config entry의 update_mode=commit 으로 갱신
         """
-        from services import _do_set_update_mode
+        from custom_components.private_hacs.services import _do_set_update_mode
 
         repos = [make_repo_item(update_mode="release")]
         store = make_store()
@@ -367,8 +367,8 @@ class TestDoSetUpdateMode:
         entry.data = {"repos": list(repos)}
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed):
             await _do_set_update_mode(hass, "private_hacs", "main", "commit")
 
         updated_repos = hass.config_entries.async_update_entry.call_args[1]["data"]["repos"]
@@ -382,7 +382,7 @@ class TestDoSetUpdateMode:
         When:  _do_set_update_mode("release") 호출
         Then:  config entry의 update_mode=release 로 갱신
         """
-        from services import _do_set_update_mode
+        from custom_components.private_hacs.services import _do_set_update_mode
 
         repos = [make_repo_item(branch="test", update_mode="commit")]
         store = make_store()
@@ -398,8 +398,8 @@ class TestDoSetUpdateMode:
         entry.data = {"repos": list(repos)}
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed):
             await _do_set_update_mode(hass, "private_hacs", "test", "release")
 
         updated_repos = hass.config_entries.async_update_entry.call_args[1]["data"]["repos"]
@@ -413,7 +413,7 @@ class TestDoSetUpdateMode:
         When:  _do_set_update_mode 호출
         Then:  HomeAssistantError 발생
         """
-        from services import _do_set_update_mode
+        from custom_components.private_hacs.services import _do_set_update_mode
 
         repos = [make_repo_item()]
         store = make_store()
@@ -421,8 +421,8 @@ class TestDoSetUpdateMode:
         hass, entry, ed = _make_hass_with_entry(repos, store, github)
         entry.data = {"repos": list(repos)}
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed):
             with pytest.raises(HomeAssistantError):
                 await _do_set_update_mode(hass, "private_hacs", "nonexistent", "commit")
 
@@ -440,7 +440,7 @@ class TestDoAddRepo:
         When:  _do_add_repo 호출
         Then:  config entry에 저장소 추가
         """
-        from services import _do_add_repo
+        from custom_components.private_hacs.services import _do_add_repo
 
         repos = []
         store = make_store()
@@ -460,9 +460,9 @@ class TestDoAddRepo:
         ed["coordinator"] = coordinator
         ed["async_add_entities"] = MagicMock()
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             await _do_add_repo(
                 hass,
                 repo="Murianwind/private_hacs",
@@ -482,7 +482,7 @@ class TestDoAddRepo:
         When:  _do_add_repo 호출
         Then:  HomeAssistantError 발생
         """
-        from services import _do_add_repo
+        from custom_components.private_hacs.services import _do_add_repo
 
         repos = []
         store = make_store()
@@ -492,9 +492,9 @@ class TestDoAddRepo:
         hass, entry, ed = _make_hass_with_entry(repos, store, github)
         entry.data = {"repos": []}
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             with pytest.raises(HomeAssistantError):
                 await _do_add_repo(
                     hass,
@@ -512,7 +512,7 @@ class TestDoAddRepo:
         When:  _do_add_repo 호출
         Then:  HomeAssistantError 발생
         """
-        from services import _do_add_repo
+        from custom_components.private_hacs.services import _do_add_repo
 
         existing = make_repo_item(branch="main")
         repos = [existing]
@@ -523,9 +523,9 @@ class TestDoAddRepo:
         hass, entry, ed = _make_hass_with_entry(repos, store, github)
         entry.data = {"repos": list(repos)}
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             with pytest.raises(HomeAssistantError):
                 await _do_add_repo(
                     hass,
@@ -543,7 +543,7 @@ class TestDoAddRepo:
         When:  config entry 확인
         Then:  update_mode=commit 저장됨
         """
-        from services import _do_add_repo
+        from custom_components.private_hacs.services import _do_add_repo
 
         repos = [make_repo_item(branch="main", update_mode="release")]
         store = make_store()
@@ -560,9 +560,9 @@ class TestDoAddRepo:
         ed["coordinator"] = coordinator
         ed["async_add_entities"] = MagicMock()
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             await _do_add_repo(
                 hass,
                 repo="Murianwind/private_hacs",
@@ -590,7 +590,7 @@ class TestDoUninstall:
         When:  _do_uninstall 호출
         Then:  github.uninstall 호출, store.async_remove 호출
         """
-        from services import _do_uninstall
+        from custom_components.private_hacs.services import _do_uninstall
 
         store = make_store({
             ("private_hacs", "main"): {"installed_version": "2.0.0"}
@@ -607,9 +607,9 @@ class TestDoUninstall:
         )
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             await _do_uninstall(hass, "private_hacs")
 
         github.uninstall.assert_called_once()
@@ -622,7 +622,7 @@ class TestDoUninstall:
         When:  _do_uninstall 호출
         Then:  HomeAssistantError 발생
         """
-        from services import _do_uninstall
+        from custom_components.private_hacs.services import _do_uninstall
 
         store = make_store()
         github = AsyncMock()
@@ -633,9 +633,9 @@ class TestDoUninstall:
         hass, entry, ed = _make_hass_with_entry([], store, github, coordinator)
         ed["coordinator"] = coordinator
 
-        with patch("services._get_entry", return_value=entry), \
-             patch("services._get_entry_data", return_value=ed), \
-             patch("services._require_entry_data", return_value=ed):
+        with patch("custom_components.private_hacs.services._get_entry", return_value=entry), \
+             patch("custom_components.private_hacs.services._get_entry_data", return_value=ed), \
+             patch("custom_components.private_hacs.services._require_entry_data", return_value=ed):
             with pytest.raises(HomeAssistantError):
                 await _do_uninstall(hass, "nonexistent")
 
@@ -653,7 +653,7 @@ class TestPreinstalledComponent:
         When:  coordinator 폴링 (active 브랜치, manifest로 버전 감지)
         Then:  최신 버전과 비교해 has_update 정확히 판단
         """
-        from coordinator import PrivateHacsCoordinator, make_entry_key
+        from custom_components.private_hacs.coordinator import PrivateHacsCoordinator, make_entry_key
 
         hass = make_hass()
         # manifest에서 2.0.0 읽음
