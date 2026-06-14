@@ -43,6 +43,29 @@ def make_branch_resp(sha: str, branch: str = "main"):
 
 
 # ──────────────────────────────────────────────
+# GitHubClient 목업
+# ──────────────────────────────────────────────
+
+def make_github_client(
+    releases=None, tags=None, branch_sha=None,
+    branch_name="main", manifest_version=None,
+    repo_info=None, branches=None,
+):
+    client = MagicMock()
+    client.resolve_latest = AsyncMock(return_value=None)
+    client.resolve_branch_latest = AsyncMock(return_value=None)
+    client.get_repo_info = AsyncMock(return_value=repo_info or {
+        "name": "private_hacs", "description": "test",
+        "default_branch": "main", "full_name": "Murianwind/private_hacs",
+    })
+    client.get_branches = AsyncMock(return_value=branches or ["main", "test"])
+    client.get_releases = AsyncMock(return_value=[])
+    client.download_and_install = AsyncMock()
+    client.uninstall = AsyncMock()
+    return client
+
+
+# ──────────────────────────────────────────────
 # RepositoryStore 목업
 # ──────────────────────────────────────────────
 
