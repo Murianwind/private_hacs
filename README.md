@@ -1,6 +1,7 @@
 # Private HACS
 
 [![Pytest](https://github.com/Murianwind/private_hacs/actions/workflows/pytest.yml/badge.svg)](https://github.com/Murianwind/private_hacs/actions/workflows/pytest.yml)
+[![codecov](https://codecov.io/gh/Murianwind/private_hacs/graph/badge.svg)](https://codecov.io/gh/Murianwind/private_hacs)
 
 Private GitHub 저장소를 Home Assistant에서 HACS처럼 관리하는 custom integration.
 
