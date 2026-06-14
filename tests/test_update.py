@@ -357,11 +357,12 @@ class TestAsyncInstall:
         entry_key = make_entry_key("private_hacs", "main")
         entity = _make_entity(hass, repo_cfg, {entry_key: _repo_data_release()})
 
-        with patch("custom_components.private_hacs.update._do_install") as mock_install:
-            mock_install.return_value = None
-            mock_install = AsyncMock()
-            with patch("custom_components.private_hacs.services._do_install", mock_install):
-                await entity.async_install(None, False)
+        mock_install = AsyncMock()
+        # update.py 내부에서 `from .services import _do_install` 로 임포트하므로
+        # services 모듈의 원본을 패치해야 함
+        with patch("custom_components.private_hacs.services._do_install", mock_install):
+            await entity.async_install(None, False)
+            mock_install.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_given_specific_version__when_install__then_ref_passed(self, hass):
