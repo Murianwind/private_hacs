@@ -79,10 +79,10 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           for f in test_github test_github_extra test_coordinator test_services test_services_extra test_store test_helpers_and_store_extra test_update; do
-            PASS=$(grep " PASSED" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py::" | wc -l | tr -d ' ')
-            FAIL=$(grep " FAILED" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py::" | wc -l | tr -d ' ')
-            ERR=$( grep " ERROR"  pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py::" | wc -l | tr -d ' ')
-            SKIP=$(grep " SKIPPED" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py::" | wc -l | tr -d ' ')
+            PASS=$(grep -E "::.*PASSED|PASSED.*::" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py" | wc -l | tr -d ' ')
+            FAIL=$(grep -E "::.*FAILED|FAILED.*::|^FAILED tests/${f}" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py" | wc -l | tr -d ' ')
+            ERR=$( grep -E "::.*ERROR|ERROR.*::"   pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py" | wc -l | tr -d ' ')
+            SKIP=$(grep -E "::.*SKIPPED|SKIPPED.*::" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py" | wc -l | tr -d ' ')
             TOTAL=$(( PASS + FAIL + ERR + SKIP ))
             if [ "${TOTAL}" = "0" ]; then
               echo "⚠️  ${f}.py  — 수집 실패 (import 오류 등)" >> $GITHUB_STEP_SUMMARY
