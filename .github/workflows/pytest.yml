@@ -77,7 +77,7 @@ jobs:
           echo "<summary>📁 테스트 파일별 결과</summary>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          for f in test_github test_coordinator test_services test_store; do
+          for f in test_github test_github_extra test_coordinator test_services test_services_extra test_store test_helpers_and_store_extra; do
             PASS=$(grep "tests/${f}.py::.*PASSED"  pytest-coverage.txt 2>/dev/null | wc -l | tr -d ' ')
             FAIL=$(grep "tests/${f}.py::.*FAILED"  pytest-coverage.txt 2>/dev/null | wc -l | tr -d ' ')
             ERR=$( grep "tests/${f}.py::.*ERROR"   pytest-coverage.txt 2>/dev/null | wc -l | tr -d ' ')
