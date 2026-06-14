@@ -261,11 +261,11 @@ class TestDoGetReadme:
         assert "Private HACS" in result["content"]
 
     @pytest.mark.asyncio
-    async def test_given_repo_without_readme__when_get_readme__then_returns_empty(self):
+    async def test_given_repo_without_readme__when_get_readme__then_returns_fallback_message(self):
         """
         Given: README 없는 저장소 (get_readme → None)
         When:  _do_get_readme 호출
-        Then:  content="" 반환
+        Then:  content="README 내용을 찾을 수 없습니다." 반환
         """
         repos = [make_repo_item(branch="main")]
         store = make_store()
@@ -280,4 +280,4 @@ class TestDoGetReadme:
 
         result = await _do_get_readme(hass, "Murianwind/private_hacs", "main")
 
-        assert result["content"] == ""
+        assert result["content"] == "README 내용을 찾을 수 없습니다."
