@@ -5,6 +5,7 @@ on:
     branches: [ "**" ]
   pull_request:
     branches: [ "**" ]
+  workflow_dispatch:  # 수동 실행
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -77,9 +78,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           for f in test_github test_coordinator test_services test_store; do
-            TOTAL=$(grep -c "tests/${f}.py::" pytest-output.txt 2>/dev/null || echo 0)
-            PASS=$(grep "tests/${f}.py::.*PASSED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
-            FAIL=$(grep "tests/${f}.py::.*FAILED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            TOTAL=$(grep -c "tests/${f}.py::" pytest-output.txt 2>/dev/null || echo 0) || true
+            PASS=$(grep "tests/${f}.py::.*PASSED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ' || echo 0)
+            FAIL=$(grep "tests/${f}.py::.*FAILED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ' || echo 0)
             if [ "$FAIL" -gt "0" ]; then
               echo "❌ ${f}.py  — ${PASS}/${TOTAL} 통과  (${FAIL} 실패)"
             else
