@@ -4,31 +4,23 @@ from __future__ import annotations
 import sys
 import os
 
-# 저장소 루트를 sys.path에 추가
-# custom_components/private_hacs/ 가 패키지로 인식되도록
-# import 시 custom_components.private_hacs.coordinator 형태로 사용
+# 저장소 루트를 sys.path에 추가 — 상대 임포트가 패키지 컨텍스트에서 동작하도록
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-# custom_components.private_hacs 를 짧은 이름으로 접근하기 위한 alias
-# 테스트 파일에서 `from custom_components.private_hacs.coordinator import ...` 사용
-import importlib, types
-
-def _alias(short: str) -> None:
-    """custom_components.private_hacs.<short> 를 <short> 이름으로도 접근 가능하게."""
-    full = f"custom_components.private_hacs.{short}"
-    mod = importlib.import_module(full)
-    sys.modules[short] = mod
-
+# custom_components.private_hacs.* 를 짧은 이름으로도 접근 가능하게 alias
+import importlib
 for _mod in ["const", "helpers", "store", "github", "coordinator", "services", "update"]:
     try:
-        _alias(_mod)
+        full = f"custom_components.private_hacs.{_mod}"
+        mod = importlib.import_module(full)
+        sys.modules[_mod] = mod
     except Exception:
         pass
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 
 # ──────────────────────────────────────────────
@@ -48,46 +40,6 @@ def make_release(tag: str, branch: str = "main", name: str = None, body: str = "
 
 def make_branch_resp(sha: str, branch: str = "main"):
     return {"commit": {"sha": sha}, "name": branch}
-
-def make_tag(name: str):
-    return {"name": name}
-
-
-# ──────────────────────────────────────────────
-# GitHubClient 목업
-# ──────────────────────────────────────────────
-
-def make_github_client(
-    releases: list[dict] | None = None,
-    tags: list[dict] | None = None,
-    branch_sha: str | None = None,
-    branch_name: str = "main",
-    manifest_version: str | None = None,
-    repo_info: dict | None = None,
-    branches: list[str] | None = None,
-):
-    client = AsyncMock()
-    client.resolve_latest = AsyncMock()
-    client.resolve_branch_latest = AsyncMock()
-    client.get_repo_info = AsyncMock(return_value=repo_info or {
-        "name": "private_hacs",
-        "description": "test",
-        "default_branch": "main",
-        "full_name": "Murianwind/private_hacs",
-    })
-    client.get_branches = AsyncMock(return_value=branches or ["main", "test"])
-    client.get_releases = AsyncMock(return_value=[
-        {
-            "tag_name": r["tag_name"],
-            "name": r.get("name", r["tag_name"]),
-            "published_at": (r.get("published_at") or "")[:10],
-            "html_url": r.get("html_url", ""),
-            "prerelease": r.get("prerelease", False),
-            "target_commitish": r.get("target_commitish"),
-        }
-        for r in (releases or [])
-    ])
-    return client
 
 
 # ──────────────────────────────────────────────
@@ -116,17 +68,22 @@ def make_store(installed: dict | None = None):
 
 
 # ──────────────────────────────────────────────
-# Coordinator 헬퍼
+# hass 목업
 # ──────────────────────────────────────────────
 
-def make_hass():
+def make_hass(domain: str = "private_hacs"):
     hass = MagicMock()
     hass.async_add_executor_job = AsyncMock(return_value=False)
     hass.config.path = MagicMock(return_value="/tmp/test_path")
     hass.config_entries.async_entries = MagicMock(return_value=[])
     hass.config_entries.async_update_entry = MagicMock()
+    hass.data = {}
     return hass
 
+
+# ──────────────────────────────────────────────
+# repo item 팩토리
+# ──────────────────────────────────────────────
 
 def make_repo_item(
     repo: str = "Murianwind/private_hacs",
@@ -144,3 +101,41 @@ def make_repo_item(
         "update_mode": update_mode,
         "name": name,
     }
+
+
+# ──────────────────────────────────────────────
+# services.py 테스트용 hass + entry_data 셋업
+# hass.data[DOMAIN][entry_id] 구조를 정확히 재현
+# ──────────────────────────────────────────────
+
+def make_hass_for_services(repos, store, github, coordinator=None):
+    """
+    services.py의 _get_entry_data(hass) 가 동작하도록
+    hass.data[DOMAIN][entry_id] = entry_data 구조를 셋업합니다.
+    """
+    from custom_components.private_hacs.const import DOMAIN, CONF_REPOS
+
+    coord = coordinator or MagicMock()
+    coord.repos = list(repos)
+    coord.data = {}
+    coord.async_request_refresh = AsyncMock()
+    coord.async_update_listeners = MagicMock()
+
+    entry = MagicMock()
+    entry.entry_id = "test_entry_id"
+    entry.data = {CONF_REPOS: list(repos)}
+
+    entry_data = {
+        "coordinator": coord,
+        "github": github,
+        "store": store,
+    }
+
+    hass = make_hass()
+    hass.data[DOMAIN] = {"test_entry_id": entry_data}
+    hass.config_entries.async_entries = MagicMock(return_value=[entry])
+    hass.config_entries.async_update_entry = MagicMock(
+        side_effect=lambda e, **kwargs: setattr(e, "data", kwargs.get("data", e.data))
+    )
+
+    return hass, entry, entry_data, coord
