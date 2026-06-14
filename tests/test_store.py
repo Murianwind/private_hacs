@@ -12,7 +12,7 @@ import sys, os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from store import RepositoryStore
+from custom_components.private_hacs.store import RepositoryStore
 
 
 def _make_store_with_data(data: dict) -> RepositoryStore:
