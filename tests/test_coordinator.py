@@ -202,6 +202,18 @@ def _make_coord(hass, repos, github, store=None):
         github=github, store=store or make_store()
     )
     hass.config_entries.async_entries = MagicMock(return_value=[])
+    # 실제 파일시스템 없이 테스트하므로 설치 여부는 store에 버전이 있으면 True로 간주
+    original_check = coord._check_installed
+    async def _patched_check(component_id):
+        s = coord.store
+        # store에 해당 component_id 브랜치 중 installed_version이 있으면 True
+        for r in coord.repos:
+            if r.get("component_id") == component_id:
+                branch = r.get("branch", "main")
+                if s.installed_version(component_id, branch):
+                    return True
+        return False
+    coord._check_installed = _patched_check
     return coord
 
 
@@ -412,9 +424,11 @@ class TestShaAutoRecovery:
         repos = [make_repo_item(update_mode="commit")]
         coord = _make_coord(hass, repos, github, store)
 
+        # _make_coord의 _patched_check는 store에 installed_version이 있으면 True 반환
+        # store에 installed_version=2.0.0 이 있으므로 is_installed=True
         result = await coord._async_update_data()
-        key = make_entry_key("private_hacs", "main")
 
+        key = make_entry_key("private_hacs", "main")
         assert result[key]["installed_commit_sha"] == remote_sha
         store.async_set_branch.assert_called()
 
