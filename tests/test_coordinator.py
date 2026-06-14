@@ -45,6 +45,8 @@ def test_strip_v__given_version_with_v_prefix__when_called__then_removes_prefix(
 
 def _make_coordinator():
     hass = make_hass()
+    hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+    hass.config_entries.async_entries = MagicMock(return_value=[])
     store = make_store()
     github = make_github_client()
     coord = PrivateHacsCoordinator(hass=hass, repos=[], github=github, store=store)
@@ -158,6 +160,8 @@ class TestResolveInstalledVersion:
         Then:  store의 버전 반환, source="store"
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store({("private_hacs", "main"): {"installed_version": "2.0.0"}})
         coord = PrivateHacsCoordinator(hass=hass, repos=[], github=AsyncMock(), store=store)
 
@@ -174,6 +178,8 @@ class TestResolveInstalledVersion:
         Then:  manifest.json 읽기 차단 → None, source="none"
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store()
         coord = PrivateHacsCoordinator(hass=hass, repos=[], github=AsyncMock(), store=store)
 
@@ -222,6 +228,8 @@ class TestAsyncUpdateDataRelease:
         Then:  latest.type="release", version 포함 데이터 반환
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store()
         github = AsyncMock()
         github.resolve_latest = AsyncMock(return_value={
@@ -250,6 +258,8 @@ class TestAsyncUpdateDataRelease:
         Then:  has_update=True
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store({("private_hacs", "main"): {"installed_version": "2.0.0"}})
         github = AsyncMock()
         github.resolve_latest = AsyncMock(return_value={
@@ -276,6 +286,8 @@ class TestAsyncUpdateDataRelease:
         Then:  has_update=False
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store({("private_hacs", "main"): {"installed_version": "2.0.0"}})
         github = AsyncMock()
         github.resolve_latest = AsyncMock(return_value={
@@ -309,6 +321,8 @@ class TestAsyncUpdateDataCommit:
         Then:  resolve_branch_latest 호출 (resolve_latest 아님)
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store()
         github = AsyncMock()
         github.resolve_branch_latest = AsyncMock(return_value={
@@ -337,6 +351,8 @@ class TestAsyncUpdateDataCommit:
         Then:  has_update=True
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store({
             ("private_hacs", "test"): {
                 "installed_version": "2.0.0",
@@ -368,6 +384,8 @@ class TestAsyncUpdateDataCommit:
         Then:  has_update=False
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         sha = "abc123abc123"
         store = make_store({
             ("private_hacs", "test"): {
@@ -407,6 +425,8 @@ class TestAutoSwitchUpdateMode:
         Then:  update_mode가 commit으로 자동 전환, repos 리스트 갱신
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store()
         github = AsyncMock()
         github.resolve_latest = AsyncMock(return_value={
@@ -442,6 +462,8 @@ class TestInactiveBranch:
         Then:  has_update=False (비활성 브랜치는 업데이트 알림 없음)
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store({
             ("private_hacs", "test"): {"installed_version": "1.0.0"}
         })
@@ -470,6 +492,8 @@ class TestInactiveBranch:
         Then:  installed_version=None (manifest 자동 감지 차단)
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store()
         github = AsyncMock()
         github.resolve_latest = AsyncMock(return_value={
@@ -502,8 +526,22 @@ class TestShaAutoRecovery:
         When:  _async_update_data 실행 (commit 모드)
         Then:  remote SHA로 installed_commit_sha 자동 복구, store 저장
         """
+        from custom_components.private_hacs.coordinator import PrivateHacsCoordinator, make_entry_key
+
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         remote_sha = "abc123abc123"
+
+        # executor_job: isdir(설치여부)=True, isfile(아이콘)=False
+        call_count = {"n": 0}
+        async def _executor(fn, *args):
+            call_count["n"] += 1
+            if "isdir" in str(fn):
+                return True
+            return False
+        hass.async_add_executor_job = _executor
+
         store = make_store({
             ("private_hacs", "main"): {
                 "installed_version": "2.0.0",
@@ -521,6 +559,7 @@ class TestShaAutoRecovery:
 
         repos = [make_repo_item(update_mode="commit")]
         coord = PrivateHacsCoordinator(hass=hass, repos=repos, github=github, store=store)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
 
         result = await coord._async_update_data()
         entry_key = make_entry_key("private_hacs", "main")
@@ -545,6 +584,8 @@ class TestAuthFailurePropagation:
         from homeassistant.exceptions import ConfigEntryAuthFailed
 
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store()
         github = AsyncMock()
         github.resolve_latest = AsyncMock(side_effect=GitHubAuthError("토큰 만료"))
@@ -570,6 +611,8 @@ class TestRefresh:
         Then:  최신 SHA로 갱신, has_update=True
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store({
             ("private_hacs", "main"): {
                 "installed_version": "2.0.0",
@@ -619,6 +662,8 @@ class TestMultiBranch:
         Then:  각 브랜치 독립 추적, test는 has_update=False 고정
         """
         hass = make_hass()
+        hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: False)
+        hass.config_entries.async_entries = MagicMock(return_value=[])
         store = make_store({
             ("private_hacs", "main"): {"installed_version": "2.0.0"},
             ("private_hacs", "test"): {"installed_version": "1.0.0"},
