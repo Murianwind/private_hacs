@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 
 # sys.path는 conftest.py에서 설정됩니다.
 
-from coordinator import (
+from custom_components.private_hacs.coordinator import (
     PrivateHacsCoordinator,
     make_entry_key,
     UPDATE_MODE_RELEASE,
@@ -20,7 +20,7 @@ from coordinator import (
     _strip_v,
 )
 from conftest import make_hass, make_store, make_repo_item, make_github_client
-from github import GitHubAuthError
+from custom_components.private_hacs.github import GitHubAuthError
 
 
 # ══════════════════════════════════════════════════════════════════════
