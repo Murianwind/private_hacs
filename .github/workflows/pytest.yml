@@ -74,13 +74,15 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           for f in test_github test_coordinator test_services test_store; do
-            TOTAL=$(grep "tests/${f}.py::.*::test_\|tests/${f}.py::test_" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
-            PASS=$(grep "tests/${f}.py::.*PASSED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
-            FAIL=$(grep "tests/${f}.py::.*FAILED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            PASS=$(grep "tests/${f}.py::.*PASSED"  pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            FAIL=$(grep "tests/${f}.py::.*FAILED"  pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            ERR=$( grep "tests/${f}.py::.*ERROR"   pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            SKIP=$(grep "tests/${f}.py::.*SKIPPED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            TOTAL=$(( PASS + FAIL + ERR + SKIP ))
             if [ "${TOTAL}" = "0" ]; then
               echo "⚠️  ${f}.py  — 수집 실패 (import 오류 등)" >> $GITHUB_STEP_SUMMARY
-            elif [ "${FAIL}" -gt "0" ] 2>/dev/null; then
-              echo "❌ ${f}.py  — ${PASS}/${TOTAL} 통과  (${FAIL} 실패)" >> $GITHUB_STEP_SUMMARY
+            elif [ "${FAIL}" -gt "0" ] || [ "${ERR}" -gt "0" ]; then
+              echo "❌ ${f}.py  — ${PASS}/${TOTAL} 통과  (실패 ${FAIL}, 오류 ${ERR})" >> $GITHUB_STEP_SUMMARY
             else
               echo "✅ ${f}.py  — ${PASS}/${TOTAL} 통과" >> $GITHUB_STEP_SUMMARY
             fi
