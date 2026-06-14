@@ -420,3 +420,74 @@ class TestDoRemoveRepoExtra:
             await _do_remove_repo(hass, "private_hacs", "main")
 
         mock_ent_reg.async_remove.assert_called_once_with("update.private_hacs_main_update")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# async_register_services / async_unregister_services
+# ══════════════════════════════════════════════════════════════════════
+
+class TestRegisterServices:
+
+    def test_given_no_services_registered__when_register__then_all_services_registered(self):
+        """
+        Given: 서비스 미등록 상태
+        When:  async_register_services 호출
+        Then:  10개 서비스 모두 hass.services.async_register 호출
+        """
+        from custom_components.private_hacs.services import async_register_services
+
+        hass = MagicMock()
+        hass.services.has_service = MagicMock(return_value=False)
+        hass.services.async_register = MagicMock()
+
+        async_register_services(hass)
+
+        assert hass.services.async_register.call_count == 10
+
+    def test_given_services_already_registered__when_register__then_skipped(self):
+        """
+        Given: 이미 등록된 서비스
+        When:  async_register_services 재호출
+        Then:  async_register 미호출 (중복 등록 방지)
+        """
+        from custom_components.private_hacs.services import async_register_services
+
+        hass = MagicMock()
+        hass.services.has_service = MagicMock(return_value=True)
+        hass.services.async_register = MagicMock()
+
+        async_register_services(hass)
+
+        hass.services.async_register.assert_not_called()
+
+    def test_given_services_registered__when_unregister__then_all_removed(self):
+        """
+        Given: 서비스 등록됨
+        When:  async_unregister_services 호출
+        Then:  10개 서비스 모두 async_remove 호출
+        """
+        from custom_components.private_hacs.services import async_unregister_services
+
+        hass = MagicMock()
+        hass.services.has_service = MagicMock(return_value=True)
+        hass.services.async_remove = MagicMock()
+
+        async_unregister_services(hass)
+
+        assert hass.services.async_remove.call_count == 10
+
+    def test_given_services_not_registered__when_unregister__then_skipped(self):
+        """
+        Given: 서비스 미등록 상태
+        When:  async_unregister_services 호출
+        Then:  async_remove 미호출
+        """
+        from custom_components.private_hacs.services import async_unregister_services
+
+        hass = MagicMock()
+        hass.services.has_service = MagicMock(return_value=False)
+        hass.services.async_remove = MagicMock()
+
+        async_unregister_services(hass)
+
+        hass.services.async_remove.assert_not_called()
