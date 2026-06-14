@@ -74,15 +74,15 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           for f in test_github test_coordinator test_services test_store; do
-            TOTAL=$(grep "tests/${f}.py::" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
+            TOTAL=$(grep "tests/${f}.py::.*::test_\|tests/${f}.py::test_" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
             PASS=$(grep "tests/${f}.py::.*PASSED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
             FAIL=$(grep "tests/${f}.py::.*FAILED" pytest-output.txt 2>/dev/null | wc -l | tr -d ' ')
             if [ "${TOTAL}" = "0" ]; then
-              echo "⚠️  ${f}.py  — 수집 실패 (import 오류 등)"
+              echo "⚠️  ${f}.py  — 수집 실패 (import 오류 등)" >> $GITHUB_STEP_SUMMARY
             elif [ "${FAIL}" -gt "0" ] 2>/dev/null; then
-              echo "❌ ${f}.py  — ${PASS}/${TOTAL} 통과  (${FAIL} 실패)"
+              echo "❌ ${f}.py  — ${PASS}/${TOTAL} 통과  (${FAIL} 실패)" >> $GITHUB_STEP_SUMMARY
             else
-              echo "✅ ${f}.py  — ${PASS}/${TOTAL} 통과"
+              echo "✅ ${f}.py  — ${PASS}/${TOTAL} 통과" >> $GITHUB_STEP_SUMMARY
             fi
           done
           echo '```' >> $GITHUB_STEP_SUMMARY
@@ -147,19 +147,19 @@ jobs:
             SRC=$(grep -oE "custom_components/[^ ]+\.py:[0-9]+" pytest-output.txt | sort -u || true)
             TEST=$(grep -oE "tests/[^ ]+\.py:[0-9]+" pytest-output.txt | sort -u || true)
             if [ -n "$SRC" ]; then
-              echo "📦 소스 코드 문제 (custom_components/):"
-              echo "$SRC"
-              echo "  → coordinator.py / github.py / services.py 등 실제 코드 버그일 가능성"
+              echo "📦 소스 코드 문제 (custom_components/):" >> $GITHUB_STEP_SUMMARY
+              echo "$SRC" >> $GITHUB_STEP_SUMMARY
+              echo "  → coordinator.py / github.py / services.py 등 실제 코드 버그일 가능성" >> $GITHUB_STEP_SUMMARY
             else
-              echo "📦 소스 코드 문제: 없음"
+              echo "📦 소스 코드 문제: 없음" >> $GITHUB_STEP_SUMMARY
             fi
-            echo ""
+            echo "" >> $GITHUB_STEP_SUMMARY
             if [ -n "$TEST" ]; then
-              echo "🧪 테스트 코드 문제 (tests/):"
-              echo "$TEST"
-              echo "  → 테스트 assertion 또는 mock 설정 문제일 가능성"
+              echo "🧪 테스트 코드 문제 (tests/):" >> $GITHUB_STEP_SUMMARY
+              echo "$TEST" >> $GITHUB_STEP_SUMMARY
+              echo "  → 테스트 assertion 또는 mock 설정 문제일 가능성" >> $GITHUB_STEP_SUMMARY
             else
-              echo "🧪 테스트 코드 문제: 없음"
+              echo "🧪 테스트 코드 문제: 없음" >> $GITHUB_STEP_SUMMARY
             fi
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi
