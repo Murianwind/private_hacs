@@ -239,7 +239,11 @@ async def _do_install(
             {"installed_version": None, "installed_commit_sha": None}
         )
 
-    await coordinator.async_request_refresh()
+    # async_request_refresh()는 디바운서(기본 10초)를 거치므로 직전 갱신과
+    # 겹치면 이 호출이 즉시 반환되고 실제 갱신은 나중에 일어날 수 있다.
+    # 설치 직후에는 사용자가 결과를 바로 봐야 하므로 즉시 실행되는
+    # async_refresh()를 사용한다.
+    await coordinator.async_refresh()
 
 
 async def _do_uninstall(hass: HomeAssistant, component_id: str) -> None:
@@ -269,13 +273,13 @@ async def _do_uninstall(hass: HomeAssistant, component_id: str) -> None:
 
     # 파일을 삭제했으므로 모든 브랜치의 설치 기록 초기화
     await store.async_remove(component_id)
-    await coordinator.async_request_refresh()
+    await coordinator.async_refresh()
 
 
 async def _do_refresh(hass: HomeAssistant) -> None:
     ed = _get_entry_data(hass)
     if ed and ed.get("coordinator"):
-        await ed["coordinator"].async_request_refresh()
+        await ed["coordinator"].async_refresh()
 
 
 async def _do_add_repo(
@@ -340,7 +344,7 @@ async def _do_add_repo(
             from .update import PrivateHacsUpdateEntity
             ed["async_add_entities"]([PrivateHacsUpdateEntity(coordinator, entry, new_repo_cfg)])
 
-        await coordinator.async_request_refresh()
+        await coordinator.async_refresh()
 
 
 async def _do_remove_repo(hass: HomeAssistant, component_id: str, branch: str) -> None:
@@ -466,7 +470,7 @@ async def _do_toggle_branch(
 
     # 활성화 시 refresh만 수행 — 실제 설치는 패널에서 별도 호출
     if active:
-        await coordinator.async_request_refresh()
+        await coordinator.async_refresh()
 
 
 async def _do_set_update_mode(
@@ -502,7 +506,12 @@ async def _do_set_update_mode(
         if coordinator.data and entry_key in coordinator.data:
             coordinator.data[entry_key]["update_mode"] = update_mode
         coordinator.async_update_listeners()
-        await coordinator.async_request_refresh()
+        # async_request_refresh()는 10초 디바운서를 거치므로, 직전에 다른
+        # 갱신이 있었다면 이 호출이 아무 일도 하지 않고 즉시 반환할 수 있다
+        # (release_url 등이 새 모드 기준으로 갱신되지 않은 채로 끝남).
+        # 모드 변경은 사용자가 즉시 결과를 봐야 하므로 디바운서를 우회하는
+        # async_refresh()로 강제 즉시 갱신한다.
+        await coordinator.async_refresh()
 
     _LOGGER.info("update_mode for %s@%s set to %s", component_id, branch, update_mode)
 
