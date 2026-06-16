@@ -687,6 +687,7 @@ async function fetchRepos() {
         installed_version: installed, latest_version: latest,
         installed_commit_sha: a.installed_commit_sha || null,
         remote_commit_sha: a.remote_commit_sha || null,
+        remote_manifest_version: a.remote_manifest_version || null,
         release_url: a.release_url || null,
         has_update: hasUpdate, is_installed: !!installed,
         active,
@@ -800,14 +801,25 @@ function branchRowHTML(r) {
   const installedBadge = r.installed_version
     ? '<span class="badge badge-version">설치: ' + esc(r.installed_version) + esc(shaStr) + '</span>' : '';
 
-  // 최신 배지: latest_version(버전 또는 SHA)에 remote_commit_sha를 덧붙임.
-  // latest_version이 이미 SHA 7자리와 같은 값이면 중복 표시하지 않음.
+  // 최신 배지: latest_version은 SHA 1순위(없으면 manifest 버전)로 채워져 있음.
+  // 화면에는 "버전/SHA" 형태로 둘 다 보여준다 — manifest 버전이 있고
+  // latest_version이 SHA라면 "2.1.3/e02eb77"처럼 합쳐서 표시.
   let latestBadge = '';
   if (r.has_update && r.latest_version) {
     const latestShaShort = r.remote_commit_sha ? String(r.remote_commit_sha).slice(0, 7) : '';
-    const alreadyIsSha = latestShaShort && r.latest_version === latestShaShort;
-    const latestShaStr = (latestShaShort && !alreadyIsSha) ? '/' + latestShaShort : '';
-    latestBadge = '<span class="badge badge-version">최신: ' + esc(r.latest_version) + esc(latestShaStr) + '</span>';
+    const isLatestVersionTheSha = latestShaShort && r.latest_version === latestShaShort;
+    let latestDisplay;
+    if (isLatestVersionTheSha && r.remote_manifest_version) {
+      // latest_version이 SHA이고 manifest 버전도 있으면: "버전/SHA"
+      latestDisplay = esc(r.remote_manifest_version) + esc('/' + latestShaShort);
+    } else if (isLatestVersionTheSha) {
+      // SHA만 있음 (manifest 버전 없음)
+      latestDisplay = esc(r.latest_version);
+    } else {
+      // latest_version이 이미 manifest 버전 — SHA를 붙여서 보여줌
+      latestDisplay = esc(r.latest_version) + (latestShaShort ? esc('/' + latestShaShort) : '');
+    }
+    latestBadge = '<span class="badge badge-version">최신: ' + latestDisplay + '</span>';
   }
 
   const isCommitUrl = r.release_url && r.release_url.includes('/commits/');
