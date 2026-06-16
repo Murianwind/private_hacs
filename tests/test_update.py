@@ -140,12 +140,14 @@ class TestVersionProperties:
 
         assert entity.installed_version is None
 
-    def test_given_commit_mode_update_with_manifest_version__when_read__then_shows_manifest_version(self, hass):
+    def test_given_commit_mode_update_with_sha_and_manifest_version__when_read__then_sha_wins(self, hass):
         """
-        Given: 커밋 추적 브랜치, 업데이트 있음, 원격 manifest.json에 버전 문자열 존재
+        Given: 커밋 추적 브랜치, 업데이트 있음, SHA와 manifest 버전 둘 다 존재
         When:  latest_version 읽기
-        Then:  manifest 버전 문자열을 반환 (SHA는 사라지지 않고 extra_state_attributes의
-               remote_commit_sha로 별도 노출되어 패널 UI에서 "버전/SHA" 형태로 합쳐짐)
+        Then:  SHA 7자리 반환 (1순위 SHA, 2순위 manifest 버전).
+               manifest 버전은 사라지지 않고 extra_state_attributes의
+               remote_manifest_version으로 별도 노출되어 패널 UI에서
+               "버전/SHA" 형태로 합쳐 보여줄 수 있다.
         """
         repo_cfg = make_repo_item(branch="test", update_mode="commit")
         entry_key = make_entry_key("private_hacs", "test")
@@ -154,26 +156,25 @@ class TestVersionProperties:
         data["latest"]["remote_manifest_version"] = "2.1.3"
         entity = _make_entity(hass, repo_cfg, {entry_key: data})
 
-        assert entity.latest_version == "2.1.3"
-        # SHA는 latest_version에서 사라지지 않고 별도 attribute로 노출됨
+        assert entity.latest_version == new_sha[:7]
+        assert entity.extra_state_attributes["remote_manifest_version"] == "2.1.3"
         assert entity.extra_state_attributes["remote_commit_sha"] == new_sha
 
-    def test_given_commit_mode_update_no_manifest_version__when_read__then_falls_back_to_sha(self, hass):
+    def test_given_commit_mode_update_no_sha__when_read__then_falls_back_to_manifest_version(self, hass):
         """
-        Given: 커밋 추적 브랜치, 업데이트 있음, 원격 manifest.json에 버전 문자열 없음
-               (remote_manifest_version=None — 흔한 경우, manifest.json에 버전을
-                기록하지 않는 저장소)
+        Given: 커밋 추적 브랜치, 업데이트 있음, commit_sha 없음(비정상 케이스),
+               manifest 버전은 존재
         When:  latest_version 읽기
-        Then:  commit_sha 7자리로 fallback
+        Then:  SHA가 없으므로 2순위인 manifest 버전으로 fallback
         """
         repo_cfg = make_repo_item(branch="test", update_mode="commit")
         entry_key = make_entry_key("private_hacs", "test")
-        new_sha = "f186cd5abcdef"
-        data = _repo_data_commit(sha="oldsha1234567", new_sha=new_sha)
-        data["latest"]["remote_manifest_version"] = None
+        data = _repo_data_commit(sha="oldsha1234567", new_sha="newsha7654321")
+        data["latest"]["commit_sha"] = None
+        data["latest"]["remote_manifest_version"] = "2.1.3"
         entity = _make_entity(hass, repo_cfg, {entry_key: data})
 
-        assert entity.latest_version == new_sha[:7]
+        assert entity.latest_version == "2.1.3"
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -271,6 +272,24 @@ class TestExtraStateAttributes:
 
         attrs = entity.extra_state_attributes
         assert attrs["installed_commit_sha"] == "abc123abc123"
+
+    def test_given_commit_branch_with_manifest_version__when_read__then_manifest_version_exposed(self, hass):
+        """
+        Given: 커밋 추적 브랜치, remote_manifest_version 존재
+        When:  extra_state_attributes 읽기
+        Then:  remote_manifest_version이 별도 attribute로 노출됨
+               (latest_version은 SHA를 우선 반환하지만, manifest 버전 정보가
+                사라지지 않고 패널 UI에서 합쳐 표시할 수 있도록 함)
+        """
+        repo_cfg = make_repo_item(branch="test", update_mode="commit")
+        entry_key = make_entry_key("private_hacs", "test")
+        data = _repo_data_commit("abc123abc123", new_sha="newsha7654321")
+        data["latest"]["remote_manifest_version"] = "2.1.3"
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        attrs = entity.extra_state_attributes
+        assert attrs["remote_manifest_version"] == "2.1.3"
+        assert attrs["remote_commit_sha"] == "newsha7654321"
         assert attrs["update_mode"] == "commit"
         assert attrs["has_icon"] is True
 
