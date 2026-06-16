@@ -146,7 +146,7 @@ def make_hass_for_services(repos, store, github, coordinator=None, coord_data=No
         coord.data = coord_data
     elif not isinstance(coord.data, dict):
         coord.data = {}
-    coord.async_request_refresh = AsyncMock()
+    coord.async_refresh = AsyncMock()
     coord.async_update_listeners = MagicMock()
 
     entry = MagicMock()
