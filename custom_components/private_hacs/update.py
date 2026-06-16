@@ -141,17 +141,19 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         if not self._repo_data.get("has_update", False):
             return self._repo_data.get("installed_version")
         latest = self._latest
-        # 커밋 추적(branch 타입)은 manifest 버전이 있으면 그 값을, 없으면
-        # SHA 7자리를 표시. SHA 자체는 extra_state_attributes의
-        # remote_commit_sha로 항상 별도 노출되며, 패널 UI에서
-        # "버전/SHA" 형태로 합쳐서 보여준다 (예: "2.1.3/e02eb77").
+        # 커밋 추적(branch 타입): 1순위 SHA, 2순위 manifest 버전.
+        # SHA가 있으면 항상 SHA 7자리를 우선 표시한다.
+        # manifest 버전은 SHA를 구할 수 없을 때만 보조로 사용한다.
+        # (manifest 버전 자체가 사라지는 게 아니라, 패널 UI에서
+        #  extra_state_attributes의 remote_commit_sha와 함께
+        #  "버전/SHA" 형태로 합쳐서 보여준다.)
         if latest.get("type") == "branch":
-            manifest_version = latest.get("remote_manifest_version")
-            if manifest_version:
-                return manifest_version
             commit_sha = latest.get("commit_sha")
             if commit_sha:
                 return commit_sha[:7]
+            manifest_version = latest.get("remote_manifest_version")
+            if manifest_version:
+                return manifest_version
         return latest.get("version")
 
     @property
@@ -190,6 +192,7 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             "version_source": self._repo_data.get("version_source", "none"),
             "latest_type": latest.get("type"),
             "remote_commit_sha": latest.get("commit_sha"),
+            "remote_manifest_version": latest.get("remote_manifest_version"),
             "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
             "has_icon": self._repo_data.get("has_icon", False),
         }
