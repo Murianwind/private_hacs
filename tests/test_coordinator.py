@@ -498,6 +498,8 @@ class TestShaUnknownButInstalled:
         })
         github = AsyncMock()
         github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(remote_sha))
+        # 파일 비교 검증이 실패한 상황을 가정 (디스크 파일이 HEAD와 다름)
+        github.verify_installed_sha = AsyncMock(return_value=False)
         repos = [make_repo_item(update_mode="commit")]
         coord = _make_coord(hass, repos, github, store)
 
@@ -522,6 +524,8 @@ class TestShaUnknownButInstalled:
         })
         github = AsyncMock()
         github.resolve_branch_latest = AsyncMock(return_value=_commit_latest("sha_v1_0000000"))
+        # 파일 비교 검증이 실패하는 상황 (디스크 파일이 HEAD와 다름) — 매번 재확인
+        github.verify_installed_sha = AsyncMock(return_value=False)
         repos = [make_repo_item(update_mode="commit")]
         coord = _make_coord(hass, repos, github, store)
 
