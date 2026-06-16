@@ -56,8 +56,22 @@
     cursor: pointer; transition: all .15s; font-family: inherit;
   }
   .btn:active { transform: scale(.97); }
-  .header .btn { background: rgba(255,255,255,.2); color: #fff; border: 1px solid rgba(255,255,255,.3); }
-  .header .btn:hover { background: rgba(255,255,255,.35); }
+
+  /* 헤더 버튼 — 라이트/다크 모두 가시
+     헤더 배경색과 무관하게 어두운 반투명으로 깊이감을 줌 */
+  .header .btn {
+    background: rgba(0,0,0,.18);
+    color: var(--app-header-text-color, #fff);
+    border: 1px solid rgba(0,0,0,.22);
+    backdrop-filter: brightness(1.15);
+  }
+  .header .btn:hover { background: rgba(0,0,0,.30); }
+  .header .btn-restart {
+    background: rgba(244,67,54,.28);
+    border-color: rgba(244,67,54,.45);
+  }
+  .header .btn-restart:hover { background: rgba(244,67,54,.42); }
+
   .btn-primary { background: var(--primary); color: #fff; }
   .btn-primary:hover { background: var(--primary-dark); }
   .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
@@ -72,10 +86,10 @@
   .btn-sm { padding: 6px 12px; font-size: 13px; }
 
   /* ── Main ── */
-  .main { max-width: 960px; margin: 0 auto; padding: 20px 16px; }
+  .main { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
 
   /* ── Stats ── */
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; max-width: 480px; }
   .stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 8px; text-align: center; }
   .stat-number { font-size: 32px; font-weight: 700; color: var(--primary); line-height: 1.1; }
   .stat-label { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
@@ -84,23 +98,34 @@
   .filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   .filter-bar input {
     flex: 1; min-width: 140px;
-    background: var(--surface2); border: 1px solid var(--border);
+    background: var(--surface2); border: 1.5px solid var(--border);
     border-radius: var(--radius-sm); padding: 10px 14px;
     color: var(--text); font-size: 14px; font-family: inherit;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
   }
   .filter-bar input::placeholder { color: var(--text-secondary); }
-  .filter-bar input:focus { outline: none; border-color: var(--primary); }
+  .filter-bar input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(3,169,244,.15); }
   .filter-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
   .tab-btn {
-    padding: 8px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: var(--surface2); color: var(--text-secondary);
+    padding: 8px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface2); color: var(--text);
     font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; font-family: inherit;
   }
-  .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
 
-  /* ── Repo group (컴포넌트 단위 묶음) ── */
-  .repo-grid { display: flex; flex-direction: column; gap: 12px; }
-
+  /* ── Repo group ── */
+  .repo-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  @media (min-width: 900px) {
+    .repo-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (min-width: 1300px) {
+    .repo-grid { grid-template-columns: repeat(3, 1fr); }
+  }
   .repo-group {
     background: var(--surface2);
     border: 1px solid var(--border);
@@ -111,7 +136,6 @@
   .repo-group:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,.1); }
   .repo-group.has-update { border-left: 3px solid var(--warning); }
 
-  /* 그룹 헤더 */
   .group-header {
     display: flex; align-items: center; gap: 12px;
     padding: 14px 16px;
@@ -136,19 +160,39 @@
     margin-top: 1px;
   }
 
-  /* 브랜치 행 */
+  /* ── 브랜치 행: 그리드로 토글/정보/버튼 정렬 ──
+     [토글] | [브랜치명 + 배지]
+            | [버튼들]
+  */
   .branch-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 16px 12px 20px;
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    grid-template-rows: auto auto;
+    row-gap: 6px;
+    padding: 12px 16px 12px 14px;
     border-bottom: 1px solid var(--border);
     transition: background .15s;
   }
   .branch-row:last-child { border-bottom: none; }
-  .branch-row.inactive { opacity: .5; }
+  .branch-row.inactive { opacity: .55; }
 
+  /* 토글: 1열, 두 행 모두 (세로 가운데 정렬) */
+  .toggle-wrap {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    display: flex;
+    align-items: center;
+    padding-top: 1px;
+  }
+
+  /* 브랜치명+배지: 2열 1행 */
   .branch-label {
-    display: flex; align-items: center; gap: 6px;
-    min-width: 90px; flex-shrink: 0;
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
   }
   .branch-name {
     font-size: 13px; font-weight: 600;
@@ -156,13 +200,30 @@
     color: var(--primary);
     background: rgba(3,169,244,.1);
     padding: 2px 8px; border-radius: 10px;
+    flex-shrink: 0;
   }
 
-  .branch-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; flex: 1; min-width: 0; }
-  .branch-actions { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; flex-shrink: 0; }
+  /* 버전/링크 배지: branch-label과 같은 행에 flex로 이어짐 */
+  .branch-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* 버튼: 2열 2행 */
+  .branch-actions {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
 
   /* ── Toggle switch ── */
-  .toggle-wrap { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .toggle-label { font-size: 11px; color: var(--text-secondary); }
   .toggle {
     position: relative; width: 36px; height: 20px;
@@ -171,30 +232,46 @@
   .toggle input { opacity: 0; width: 0; height: 0; }
   .toggle-slider {
     position: absolute; inset: 0;
-    background: #555; border-radius: 20px;
-    cursor: pointer; transition: background .2s;
+    background: var(--surface3, #3a3a3c);
+    border: 1.5px solid var(--text-secondary, #98989f);
+    border-radius: 20px;
+    cursor: pointer; transition: background .2s, border-color .2s;
   }
   .toggle-slider::before {
     content: ''; position: absolute;
-    width: 14px; height: 14px; border-radius: 50%;
-    background: #fff; left: 3px; top: 3px;
-    transition: transform .2s;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--primary-text-color, #4a4a4a);
+    left: 2px; top: 2px;
+    transition: transform .2s, background .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
   }
-  .toggle input:checked + .toggle-slider { background: var(--primary); }
-  .toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+  /* 켜짐 상태: primary 색상에 의존하지 않고 명확한 진한 청록색 고정,
+     동그라미는 흰색 + 진한 테두리로 배경과 분리 */
+  .toggle input:checked + .toggle-slider {
+    background: #0b8043;
+    border-color: #0b8043;
+  }
+  .toggle input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.15);
+    box-shadow: 0 1px 3px rgba(0,0,0,.5);
+  }
+  .toggle input:disabled + .toggle-slider { opacity: .4; cursor: default; }
 
   /* ── Badges ── */
   .badge {
     display: inline-flex; align-items: center; gap: 3px;
-    padding: 3px 9px; border-radius: 20px;
-    font-size: 13px; font-weight: 500; font-family: inherit;
+    padding: 2px 8px; border-radius: 20px;
+    font-size: 12px; font-weight: 500; font-family: inherit;
+    white-space: nowrap;
   }
   .badge-installed  { background: rgba(76,175,80,.15);  color: var(--success); }
   .badge-update     { background: rgba(255,152,0,.15);   color: var(--warning); }
   .badge-not-installed { background: var(--surface3); color: var(--text-secondary); }
-  .badge-version    { background: var(--surface3); color: var(--text-secondary); font-size: 13px; }
+  .badge-version    { background: var(--surface3); color: var(--text-secondary); font-size: 12px; }
   .badge-manifest   { background: rgba(124,77,255,.15); color: #9c7ae8; }
-  .release-link { font-size: 13px; font-weight: 500; color: var(--primary); text-decoration: none; }
+  .release-link { font-size: 12px; font-weight: 500; color: var(--primary); text-decoration: none; white-space: nowrap; }
   .release-link:hover { text-decoration: underline; }
   .readme-link {
     font-size: 11px; font-weight: 500;
@@ -213,7 +290,7 @@
   }
 
   /* ── Loading / empty ── */
-  .loading { text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+  .loading { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-secondary); }
   .spinner {
     width: 36px; height: 36px;
     border: 3px solid var(--border); border-top-color: var(--primary);
@@ -221,7 +298,7 @@
     margin: 0 auto 16px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .empty { text-align: center; padding: 60px 20px; color: var(--text-secondary); font-size: 15px; line-height: 1.6; }
+  .empty { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-secondary); font-size: 15px; line-height: 1.6; }
   .empty-icon { font-size: 48px; margin-bottom: 12px; }
 
   /* ── Toast ── */
@@ -231,10 +308,11 @@
     z-index: 9999; pointer-events: none; max-width: calc(100vw - 32px);
   }
   .toast {
-    background: #2c2c2e; background: var(--card-background-color, #2c2c2e);
-    border: 1px solid #3a3a3c; border: 1px solid var(--divider-color, #3a3a3c);
+    background: var(--surface3, #2c2c2e);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     padding: 12px 16px; font-size: 14px; font-family: inherit;
+    color: var(--text);
     min-width: 240px; max-width: 360px; pointer-events: auto;
     animation: slideIn .25s ease; display: flex; align-items: center; gap: 10px;
     box-shadow: 0 4px 12px rgba(0,0,0,.15);
@@ -253,67 +331,60 @@
   }
   .modal-backdrop.open { display: flex; }
   .modal {
-    background: #2c2c2e;
-    background: var(--card-background-color, #2c2c2e);
-    border: 1px solid #3a3a3c;
-    border: 1px solid var(--divider-color, #3a3a3c);
+    background: var(--surface2, #2c2c2e);
+    border: 1px solid var(--border);
     border-radius: var(--radius); padding: 24px;
     width: 92%; max-width: 480px;
-    box-shadow: 0 8px 32px rgba(0,0,0,.6);
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
     max-height: 90vh; display: flex; flex-direction: column;
   }
   #readmeModal .modal { max-width: 760px; width: 95%; height: 85vh; }
-  .modal h2 { font-size: 17px; font-weight: 600; color: #e5e5ea; color: var(--primary-text-color, #e5e5ea); margin-bottom: 18px; flex-shrink: 0; }
+  .modal h2 { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 18px; flex-shrink: 0; }
   .modal-field { margin-bottom: 14px; flex-shrink: 0; }
-  .modal-field label { display: block; font-size: 13px; color: #98989f; color: var(--secondary-text-color, #98989f); margin-bottom: 5px; font-weight: 500; }
+  .modal-field label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 5px; font-weight: 500; }
   .modal-field input {
     width: 100%;
-    background: #1c1c1e; background: var(--secondary-background-color, #1c1c1e);
-    border: 1px solid #3a3a3c; border: 1px solid var(--divider-color, #3a3a3c);
+    background: var(--surface, #1c1c1e);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 10px 12px;
-    color: #e5e5ea; color: var(--primary-text-color, #e5e5ea);
+    color: var(--text);
     font-size: 14px; font-family: inherit;
   }
   .modal-field input:focus { outline: none; border-color: var(--primary); }
-  .modal-field .hint { font-size: 12px; color: #98989f; color: var(--secondary-text-color, #98989f); margin-top: 4px; }
+  .modal-field .hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: auto; flex-shrink: 0; padding-top: 16px; }
 
-  /* 저장소 미리보기 */
   .repo-preview {
     display: none;
-    background: #1c1c1e; background: var(--secondary-background-color, #1c1c1e);
-    border: 1px solid #3a3a3c; border: 1px solid var(--divider-color, #3a3a3c);
+    background: var(--surface, #1c1c1e);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; font-size: 13px;
   }
   .repo-preview.visible { display: block; }
-  .repo-preview-name { font-weight: 600; margin-bottom: 4px; color: #e5e5ea; color: var(--primary-text-color, #e5e5ea); font-size: 14px; }
-  .repo-preview-desc { color: #98989f; color: var(--secondary-text-color, #98989f); }
+  .repo-preview-name { font-weight: 600; margin-bottom: 4px; color: var(--text); font-size: 14px; }
+  .repo-preview-desc { color: var(--text-secondary); }
   .repo-preview-component { color: var(--primary); font-size: 13px; margin-top: 6px; }
 
-  /* 브랜치 선택 목록 */
   .branch-select-list {
     display: flex; flex-direction: column; gap: 6px;
-    max-height: 200px; overflow-y: auto;
-    margin-top: 6px;
+    max-height: 200px; overflow-y: auto; margin-top: 6px;
   }
   .branch-select-item {
     display: flex; align-items: center; gap: 10px;
     padding: 9px 12px;
-    background: #1c1c1e; background: var(--secondary-background-color, #1c1c1e);
-    border: 1px solid #3a3a3c; border: 1px solid var(--divider-color, #3a3a3c);
+    background: var(--surface, #1c1c1e);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     cursor: pointer; transition: border-color .15s, background .15s;
     font-size: 13px;
   }
-  .branch-select-item:hover { border-color: var(--primary); background: #2c2c2e; background: var(--surface2, #2c2c2e); }
+  .branch-select-item:hover { border-color: var(--primary); background: var(--surface2); }
   .branch-select-item.selected { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
-  .branch-select-item.already-registered {
-    opacity: .45; cursor: not-allowed;
-  }
-  .branch-select-item.already-registered:hover { border-color: #3a3a3c; border-color: var(--divider-color, #3a3a3c); background: #1c1c1e; background: var(--secondary-background-color, #1c1c1e); }
+  .branch-select-item.already-registered { opacity: .45; cursor: not-allowed; }
+  .branch-select-item.already-registered:hover { border-color: var(--border); background: var(--surface); }
   .branch-item-radio {
     width: 14px; height: 14px; flex-shrink: 0;
-    border: 2px solid #555; border-radius: 50%;
+    border: 2px solid var(--border); border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
   }
   .branch-select-item.selected .branch-item-radio { border-color: var(--primary); }
@@ -329,30 +400,28 @@
     font-size: 11px; padding: 1px 6px; border-radius: 10px;
     background: rgba(76,175,80,.15); color: var(--success);
   }
-  .branch-loading { text-align: center; padding: 16px 0; color: #98989f; font-size: 13px; }
+  .branch-loading { text-align: center; padding: 16px 0; color: var(--text-secondary); font-size: 13px; }
   .branch-loading .spinner { width: 20px; height: 20px; border-width: 2px; margin: 0 auto 8px; }
 
-  /* 릴리즈 선택 목록 */
   .release-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; max-height: 360px; }
   .release-item {
     display: flex; align-items: center; gap: 12px; padding: 12px 14px;
-    border: 1px solid #3a3a3c; border: 1px solid var(--divider-color, #3a3a3c);
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm); cursor: pointer; transition: border-color .15s, background .15s;
-    background: #2c2c2e; background: var(--secondary-background-color, #2c2c2e);
+    background: var(--surface2);
   }
-  .release-item:hover { border-color: var(--primary); background: #3a3a3c; background: var(--surface3, #3a3a3c); }
-  .release-item.selected { border-color: var(--primary); background: #3a3a3c; box-shadow: inset 3px 0 0 var(--primary); }
-  .release-item-radio { width: 16px; height: 16px; flex-shrink: 0; border: 2px solid #555; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .release-item:hover { border-color: var(--primary); background: var(--surface3); }
+  .release-item.selected { border-color: var(--primary); background: var(--surface3); box-shadow: inset 3px 0 0 var(--primary); }
+  .release-item-radio { width: 16px; height: 16px; flex-shrink: 0; border: 2px solid var(--border); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
   .release-item.selected .release-item-radio { border-color: var(--primary); }
   .release-item.selected .release-item-radio::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); display: block; }
   .release-item-info { flex: 1; min-width: 0; }
-  .release-item-name { font-size: 14px; font-weight: 600; color: #e5e5ea; color: var(--primary-text-color, #e5e5ea); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .release-item-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .release-item-tag { font-size: 12px; color: var(--primary); font-family: monospace; margin-top: 1px; }
-  .release-item-date { font-size: 12px; color: #98989f; flex-shrink: 0; }
+  .release-item-date { font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
   .release-item-badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: rgba(255,152,0,.15); color: var(--warning); flex-shrink: 0; }
   .release-current-badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: rgba(76,175,80,.15); color: var(--success); flex-shrink: 0; }
 
-  /* README */
   .readme-content { flex: 1; overflow-y: auto; background: #0d1117; border: 1px solid #30363d; border-radius: var(--radius-sm); padding: 24px; color: #c9d1d9; font-size: 14px; line-height: 1.6; }
   .markdown-body h1, .markdown-body h2, .markdown-body h3 { border-bottom: 1px solid #30363d; padding-bottom: 8px; margin-top: 20px; margin-bottom: 12px; color: #f0f6fc; }
   .markdown-body h1:first-child { margin-top: 0; }
@@ -370,7 +439,6 @@
   .markdown-body ul, .markdown-body ol { padding-left: 24px; margin-bottom: 12px; }
   .markdown-body li { margin-bottom: 4px; }
 
-  /* ── Confirm ── */
   .confirm-backdrop {
     display: none; position: fixed; inset: 0;
     background: rgba(0,0,0,.6);
@@ -378,23 +446,24 @@
   }
   .confirm-backdrop.open { display: flex; }
   .confirm-box {
-    background: #2c2c2e;
-    background: var(--card-background-color, #2c2c2e);
-    border: 1px solid #3a3a3c;
-    border: 1px solid var(--divider-color, #3a3a3c);
+    background: var(--surface2, #2c2c2e);
+    border: 1px solid var(--border);
     border-radius: var(--radius); padding: 24px;
     width: 90%; max-width: 360px;
-    box-shadow: 0 8px 32px rgba(0,0,0,.6);
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
   }
-  .confirm-box h3 { margin-bottom: 10px; font-size: 16px; color: #e5e5ea; color: var(--primary-text-color, #e5e5ea); }
-  .confirm-box p { font-size: 14px; color: #98989f; color: var(--secondary-text-color, #98989f); margin-bottom: 20px; line-height: 1.6; white-space: pre-line; }
+  .confirm-box h3 { margin-bottom: 10px; font-size: 16px; color: var(--text); }
+  .confirm-box p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6; white-space: pre-line; }
   .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
-  @media (max-width: 480px) {
-    .branch-row { flex-wrap: wrap; }
-    .branch-actions { width: 100%; }
+  /* ── 반응형 ── */
+  @media (max-width: 600px) {
+    .header-actions { gap: 4px; }
+    .header .btn { padding: 5px 9px; font-size: 12px; }
     .stats { gap: 8px; }
     .stat-number { font-size: 26px; }
+    .branch-row { padding: 10px 12px 10px 10px; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
   }
 </style>
 </head>
@@ -407,8 +476,8 @@
   </div>
   <div class="header-actions">
     <button class="btn btn-sm" onclick="refreshAll()" id="refreshBtn">🔄 새로고침</button>
-    <button class="btn btn-sm" onclick="confirmRestart()" style="background:rgba(255,100,100,.25);color:#fff;border:1px solid rgba(255,100,100,.4);">⏻ HA 재시작</button>
-    <button class="btn btn-sm" onclick="openAddModal()" style="background:rgba(255,255,255,.25);color:#fff;border:1px solid rgba(255,255,255,.4);">＋ 저장소 추가</button>
+    <button class="btn btn-sm btn-restart" onclick="confirmRestart()">⏻ HA 재시작</button>
+    <button class="btn btn-sm" onclick="openAddModal()">＋ 저장소 추가</button>
   </div>
 </div>
 
@@ -569,7 +638,6 @@ async function fetchRepos() {
   const states = statesRes.result || [];
   const reg = regRes.result || [];
 
-  // private_hacs 플랫폼 엔티티 id → unique_id 매핑
   const hacsEntities = {};
   reg.filter(e => e.platform === 'private_hacs').forEach(e => {
     hacsEntities[e.entity_id] = e.unique_id || '';
@@ -579,48 +647,29 @@ async function fetchRepos() {
     .filter(s => s.entity_id.startsWith('update.') && hacsEntities[s.entity_id] !== undefined)
     .map(s => {
       const a = s.attributes;
-
-      // branch: extra_state_attributes에서 직접 읽는 것이 가장 정확
-      // 없으면 unique_id(repo_{component_id}_{branch})에서 추출 시도
       let branch = a.branch;
       let component_id;
-
       const uid = hacsEntities[s.entity_id];
 
       if (branch) {
-        // branch 속성이 있으면 entity_id에서 역산
-        component_id = s.entity_id
-          .replace(/^update\./, '')
-          .replace(/_update$/, '');
+        component_id = s.entity_id.replace(/^update\./, '').replace(/_update$/, '');
         const suffix = '_' + branch;
-        if (component_id.endsWith(suffix)) {
-          component_id = component_id.slice(0, -suffix.length);
-        }
+        if (component_id.endsWith(suffix)) component_id = component_id.slice(0, -suffix.length);
       } else {
-        // branch 속성이 없는 경우 — unique_id에서 추출
-        // 신형 unique_id만 허용: repo_{component_id}_{branch}
-        // component_id에 _가 포함될 수 있으므로 branch가 확실히 존재할 때만 파싱
-        // __init__.py의 cleanup이 실행되기 전 레거시(repo_{component_id}) 엔티티를 여기서도 걸러냄
         if (!uid.startsWith('repo_') || uid.split('_').length < 3) return null;
-        // 마지막 _ 이후가 branch
         const lastUnderscore = uid.lastIndexOf('_');
         branch = uid.slice(lastUnderscore + 1);
         component_id = uid.slice('repo_'.length, lastUnderscore);
         if (!branch || !component_id) return null;
       }
-
       if (!component_id || !branch) return null;
 
       const entry_key = component_id + '@' + branch;
       const installed = a.installed_version || s.installed_version || null;
       const latest = a.latest_version || s.latest_version || null;
       const hasUpdate = s.state === 'on';
-      // active: 엔티티 attributes에서 읽음
-      // available=True로 고정했으므로 a.active가 항상 정확히 전달됨
-      // unavailable 상태(a가 비어있는 경우) 대비해 명시적으로 false 기본값 사용
       const active = (s.state !== 'unavailable' && a.active !== undefined)
-        ? Boolean(a.active)
-        : (s.state !== 'unavailable');
+        ? Boolean(a.active) : (s.state !== 'unavailable');
 
       const rawName = a.friendly_name || s.entity_id;
       let cleanName = rawName.replace(/ update$/i, '').replace(/ \([^)]+\)$/, '');
@@ -646,7 +695,7 @@ async function fetchRepos() {
         has_icon: a.has_icon || false,
       };
     })
-    .filter(Boolean); // null 제거
+    .filter(Boolean);
 }
 
 async function loadData() {
@@ -664,12 +713,9 @@ async function loadData() {
 function renderAll() { updateStats(); renderRepos(); }
 
 function updateStats() {
-  // 컴포넌트 수는 고유 component_id 수
   const compIds = new Set(repos.map(r => r.component_id));
   $el('statTotal').textContent = compIds.size;
-  // 설치됨: 활성 브랜치 중 설치된 것
   $el('statInstalled').textContent = repos.filter(r => r.active && r.is_installed).length;
-  // 업데이트: 활성 브랜치 중 업데이트 가능
   $el('statUpdates').textContent = repos.filter(r => r.active && r.has_update).length;
 }
 
@@ -680,12 +726,10 @@ function setTab(tab, btn) {
   renderRepos();
 }
 
-// ── 그룹핑 렌더링 ──
 function renderRepos() {
   const q = ($el('searchInput') ? $el('searchInput').value : '').toLowerCase();
   const grid = $el('repoGrid');
 
-  // 필터 적용 후 component_id로 그룹핑
   const filtered = repos.filter(r => {
     const matchQ = !q || r.name.toLowerCase().includes(q) || r.component_id.includes(q) || r.branch.includes(q);
     const matchTab =
@@ -702,7 +746,6 @@ function renderRepos() {
     return;
   }
 
-  // 같은 component_id끼리 묶기 (등록 순서 유지)
   const groupMap = new Map();
   filtered.forEach(r => {
     if (!groupMap.has(r.component_id)) groupMap.set(r.component_id, []);
@@ -715,23 +758,15 @@ function renderRepos() {
 function groupHTML(componentId, branches) {
   const first = branches[0];
   const hasAnyUpdate = branches.some(b => b.active && b.has_update);
-
   const iconContent = first.has_icon
     ? '<img src="/private_hacs_icons/' + componentId + '/brand/icon.png" onerror="this.outerHTML=\'🧩\'">'
     : '🧩';
-
-  // 아이콘/제목 클릭 → GitHub 저장소로 이동
   const repoHref = first.repo_url ? 'https://github.com/' + first.repo_url : null;
-  const iconClick = repoHref
-    ? 'onclick="window.open(\'' + esc(repoHref) + '\',\'_blank\')" style="cursor:pointer"' : '';
-  const titleClick = repoHref
-    ? 'onclick="window.open(\'' + esc(repoHref) + '\',\'_blank\')" style="cursor:pointer"' : '';
-
-  // README 링크 — 제목 옆 작은 버튼
+  const iconClick = repoHref ? 'onclick="window.open(\'' + esc(repoHref) + '\',\'_blank\')" style="cursor:pointer"' : '';
+  const titleClick = repoHref ? 'onclick="window.open(\'' + esc(repoHref) + '\',\'_blank\')" style="cursor:pointer"' : '';
   const readmeLink = first.repo_url
     ? '<a href="javascript:void(0)" onclick="openReadmeModal(\'' + esc(first.repo_url) + '\',\'' + esc(first.name) + '\')" class="readme-link" title="README 보기">README</a>'
     : '';
-
   const branchRows = branches.map(r => branchRowHTML(r)).join('');
 
   return '<div class="repo-group' + (hasAnyUpdate ? ' has-update' : '') + '">'
@@ -760,35 +795,28 @@ function branchRowHTML(r) {
   const sourceBadge = r.version_source === 'manifest'
     ? '<span class="badge badge-manifest">📄 자동 감지</span>' : '';
 
-  // SHA: installed_commit_sha가 있으면 항상 표시 (latest_type 무관)
-  const shaStr = r.installed_commit_sha
-    ? '/' + String(r.installed_commit_sha).slice(0, 7) : '';
+  const shaStr = r.installed_commit_sha ? '/' + String(r.installed_commit_sha).slice(0, 7) : '';
   const installedBadge = r.installed_version
     ? '<span class="badge badge-version">설치: ' + esc(r.installed_version) + esc(shaStr) + '</span>' : '';
   const latestBadge = r.has_update && r.latest_version
     ? '<span class="badge badge-version">최신: ' + esc(r.latest_version) + '</span>' : '';
 
-  // 커밋 로그 vs 릴리즈 노트: release_url이 /commits/ 경로면 커밋 로그
   const isCommitUrl = r.release_url && r.release_url.includes('/commits/');
   const linkLabel = isCommitUrl ? '커밋 로그 ↗' : '릴리즈 노트 ↗';
   const releaseLink = r.release_url
     ? '<a href="' + esc(r.release_url) + '" target="_blank" class="release-link">' + linkLabel + '</a>' : '';
 
-  // 릴리즈/태그 타입 여부 — 재설치 버튼 동작 결정
   const isReleaseType = r.latest_type === 'release' || r.latest_type === 'tag';
 
-  // update_mode 배지 — 모든 브랜치에서 클릭으로 모드 변경 가능
   const updateModeBadge = r.update_mode === 'commit'
     ? '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:pointer" '
-      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경"'
-      + '>커밋 추적</span>'
+      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경">커밋 추적</span>'
     : '<span class="badge" style="background:rgba(3,169,244,.1);color:var(--primary);cursor:pointer" '
-      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'commit\')" title="커밋 추적 모드로 변경"'
-      + '>릴리즈</span>';
+      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'commit\')" title="커밋 추적 모드로 변경">릴리즈</span>';
+
   const isSingleBranch = repos.filter(repo => repo.component_id === r.component_id).length <= 1;
   const toggleDisabled = busy || isSingleBranch;
 
-  // 토글 스위치
   const toggleHtml = '<div class="toggle-wrap">'
     + '<label class="toggle"'
     + (isSingleBranch ? ' title="브랜치가 하나뿐인 저장소는 비활성화할 수 없습니다"' : '')
@@ -802,19 +830,15 @@ function branchRowHTML(r) {
   if (busy) {
     actions = '<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>';
   } else if (!r.active) {
-    // 비활성 브랜치: 등록 해제 버튼만 표시 (규칙 4, 5)
     actions = '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else if (!r.is_installed) {
-    // 활성 + 미설치: 설치 + 등록 해제 (규칙 6 — 활성화 팝업 취소 시 이 상태)
     actions = '<button class="btn btn-success btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬇ 설치</button>'
       + '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else if (r.has_update) {
-    // 활성 + 업데이트 있음
     actions = '<button class="btn btn-warning btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬆ 업데이트</button>'
       + '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>'
       + '<button class="btn btn-ghost btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   } else {
-    // 활성 + 설치됨 + 최신: 재설치 + 컴포넌트 삭제 + 등록 해제
     const reinstallBtn = isReleaseType
       ? '<button class="btn btn-ghost btn-sm" onclick="openReleaseModal(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\',\'' + esc(r.installed_version || '') + '\')">🔄 재설치</button>'
       : '<button class="btn btn-ghost btn-sm" onclick="reinstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">🔄 재설치</button>';
@@ -823,10 +847,15 @@ function branchRowHTML(r) {
       + '<button class="btn btn-ghost btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
   }
 
+  // 브랜치 행 구조:
+  // [토글 1열 1-2행] | [브랜치명 + 배지  2열 1행]
+  //                  | [버튼들           2열 2행]
   return '<div class="branch-row' + (inactive ? ' inactive' : '') + '">'
     + toggleHtml
-    + '<div class="branch-label"><span class="branch-name">' + esc(r.branch) + '</span></div>'
-    + '<div class="branch-meta">' + statusBadge + sourceBadge + updateModeBadge + installedBadge + latestBadge + releaseLink + '</div>'
+    + '<div class="branch-label">'
+    +   '<span class="branch-name">' + esc(r.branch) + '</span>'
+    +   '<div class="branch-meta">' + statusBadge + sourceBadge + updateModeBadge + installedBadge + latestBadge + releaseLink + '</div>'
+    + '</div>'
     + '<div class="branch-actions">' + actions + '</div>'
     + '</div>';
 }
@@ -842,60 +871,37 @@ async function toggleBranch(componentId, branch, active) {
   const name = r ? r.name : componentId;
 
   if (!active) {
-    // 비활성화: 같은 component_id 브랜치가 1개뿐이면 차단
     const siblings = repos.filter(r => r.component_id === componentId);
     if (siblings.length <= 1) {
       toast('브랜치가 하나뿐인 저장소는 비활성화할 수 없습니다.', 'warning', 4000);
-      // 체크박스 UI 원래대로 복원
-      renderRepos();
-      return;
+      renderRepos(); return;
     }
-    // 비활성화: 상태 변경만
     if (r) r.active = false;
     renderAll();
     try {
-      await callService('private_hacs', 'toggle_branch', {
-        component_id: componentId, branch, active: false,
-      });
+      await callService('private_hacs', 'toggle_branch', { component_id: componentId, branch, active: false });
       toast(name + ' (' + branch + ') 비활성화됨', 'info', 2500);
     } catch (err) {
       toast('비활성화 실패: ' + err.message, 'error');
-      if (r) r.active = true;
-      renderAll();
+      if (r) r.active = true; renderAll();
     }
     return;
   }
 
-  // 활성화: 같은 component_id의 다른 브랜치 로컬에서 즉시 비활성화
-  repos.forEach(repo => {
-    if (repo.component_id === componentId) {
-      repo.active = repo.branch === branch;
-    }
-  });
-  busyKeys.add(key);
-  renderAll();
+  repos.forEach(repo => { if (repo.component_id === componentId) repo.active = repo.branch === branch; });
+  busyKeys.add(key); renderAll();
   toast(name + ' (' + branch + ') 활성화 중...', 'info', 4000);
 
   try {
-    // 1단계: 활성화 상태 저장 (설치 없이)
-    await callService('private_hacs', 'toggle_branch', {
-      component_id: componentId, branch, active: true,
-    });
-
-    // 서버 refresh 후 최신 상태 반영
+    await callService('private_hacs', 'toggle_branch', { component_id: componentId, branch, active: true });
     await new Promise(res => setTimeout(res, 1500));
-    repos = await fetchRepos();
-    busyKeys.delete(key);
-    renderAll();
+    repos = await fetchRepos(); busyKeys.delete(key); renderAll();
 
     const updated = repos.find(r => r.component_id === componentId && r.branch === branch);
-
     if (!updated) {
       toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
     } else if (!updated.is_installed) {
-      // 미설치 상태 — 설치 팝업
-      showConfirm(
-        '브랜치 설치',
+      showConfirm('브랜치 설치',
         name + ' (' + branch + ') 브랜치를 활성화했습니다.\n\n아직 설치되지 않은 브랜치입니다.\n지금 설치하시겠습니까?\n\n취소하면 나중에 수동으로 설치할 수 있습니다.',
         async () => {
           busyKeys.add(key); renderRepos();
@@ -904,17 +910,11 @@ async function toggleBranch(componentId, branch, active) {
             await callService('private_hacs', 'install', { component_id: componentId, branch });
             toast(name + ' (' + branch + ') 설치 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
             repos = await fetchRepos(); renderAll();
-          } catch (err) {
-            toast('설치 실패: ' + err.message, 'error', 6000);
-          } finally {
-            busyKeys.delete(key); renderRepos();
-          }
-        }
-      );
+          } catch (err) { toast('설치 실패: ' + err.message, 'error', 6000); }
+          finally { busyKeys.delete(key); renderRepos(); }
+        });
     } else if (updated.has_update) {
-      // 설치됐지만 업데이트 있음 — 업데이트 팝업
-      showConfirm(
-        '브랜치 업데이트',
+      showConfirm('브랜치 업데이트',
         name + ' (' + branch + ') 브랜치를 활성화했습니다.\n\n새로운 업데이트가 있습니다.\n지금 업데이트하시겠습니까?\n\n취소하면 나중에 수동으로 업데이트할 수 있습니다.',
         async () => {
           busyKeys.add(key); renderRepos();
@@ -923,24 +923,16 @@ async function toggleBranch(componentId, branch, active) {
             await callService('private_hacs', 'install', { component_id: componentId, branch });
             toast(name + ' (' + branch + ') 업데이트 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
             repos = await fetchRepos(); renderAll();
-          } catch (err) {
-            toast('업데이트 실패: ' + err.message, 'error', 6000);
-          } finally {
-            busyKeys.delete(key); renderRepos();
-          }
-        }
-      );
+          } catch (err) { toast('업데이트 실패: ' + err.message, 'error', 6000); }
+          finally { busyKeys.delete(key); renderRepos(); }
+        });
     } else {
-      // 설치됐고 최신 — 팝업 없이 활성화 완료
       toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
     }
   } catch (err) {
     toast('활성화 실패: ' + err.message, 'error', 6000);
     repos = await fetchRepos(); renderAll();
-  } finally {
-    busyKeys.delete(key);
-    renderRepos();
-  }
+  } finally { busyKeys.delete(key); renderRepos(); }
 }
 
 // ── 업데이트 모드 변경 ──
@@ -949,15 +941,11 @@ async function setUpdateMode(componentId, branch, mode) {
   const name = r ? r.name : componentId;
   const modeLabel = mode === 'commit' ? '커밋 추적' : '릴리즈';
   try {
-    await callService('private_hacs', 'set_update_mode', {
-      component_id: componentId, branch, update_mode: mode,
-    });
+    await callService('private_hacs', 'set_update_mode', { component_id: componentId, branch, update_mode: mode });
     if (r) r.update_mode = mode;
     renderAll();
     toast(name + ' (' + branch + ') 업데이트 모드: ' + modeLabel, 'success', 3000);
-  } catch (err) {
-    toast('모드 변경 실패: ' + err.message, 'error', 5000);
-  }
+  } catch (err) { toast('모드 변경 실패: ' + err.message, 'error', 5000); }
 }
 
 // ── 설치/재설치/삭제 ──
@@ -969,17 +957,14 @@ async function install(componentId, branch, name) {
     await callService('private_hacs', 'install', { component_id: componentId, branch });
     toast(name + ' (' + branch + ') 설치 완료! HA를 재시작해야 적용됩니다.', 'success', 6000);
     repos = await fetchRepos(); renderAll();
-  } catch (err) {
-    toast('설치 실패: ' + err.message, 'error', 6000);
-  } finally { busyKeys.delete(key); renderRepos(); }
+  } catch (err) { toast('설치 실패: ' + err.message, 'error', 6000); }
+  finally { busyKeys.delete(key); renderRepos(); }
 }
 
 async function reinstall(componentId, branch, name) {
-  showConfirm(
-    '재설치 확인',
+  showConfirm('재설치 확인',
     name + ' (' + branch + ') 브랜치를 재설치하시겠습니까?\n\n재설치 후 HA를 재시작해야 적용됩니다.',
-    () => install(componentId, branch, name)
-  );
+    () => install(componentId, branch, name));
 }
 
 async function uninstall(componentId, branch, name) {
@@ -993,9 +978,8 @@ async function uninstall(componentId, branch, name) {
         await callService('private_hacs', 'uninstall', { component_id: componentId });
         toast(name + ' (' + branch + ') 삭제 완료. HA를 재시작하세요.', 'success', 6000);
         repos = await fetchRepos(); renderAll();
-      } catch (err) {
-        toast('삭제 실패: ' + err.message, 'error', 6000);
-      } finally { busyKeys.delete(key); renderRepos(); }
+      } catch (err) { toast('삭제 실패: ' + err.message, 'error', 6000); }
+      finally { busyKeys.delete(key); renderRepos(); }
     });
 }
 
@@ -1006,40 +990,29 @@ async function removeRepo(componentId, branch, name) {
   const hasSiblings = siblings.length > 0;
 
   let confirmMsg = name + ' (' + branch + ') 브랜치를 Private HACS에서 제거하시겠습니까?\n\n설치된 파일은 자동으로 삭제되지 않습니다.';
-
-  if (isActive && hasSiblings) {
-    confirmMsg += '\n\n⚠️ 현재 활성화된 브랜치입니다.\n등록 해제 후 다른 브랜치를 직접 활성화해야 합니다.';
-  } else if (isActive && !hasSiblings) {
-    confirmMsg += '\n\n⚠️ 현재 활성화된 브랜치이며 다른 등록된 브랜치가 없습니다.\n등록 해제 후 활성 브랜치가 없는 상태가 됩니다.';
-  }
+  if (isActive && hasSiblings) confirmMsg += '\n\n⚠️ 현재 활성화된 브랜치입니다.\n등록 해제 후 다른 브랜치를 직접 활성화해야 합니다.';
+  else if (isActive && !hasSiblings) confirmMsg += '\n\n⚠️ 현재 활성화된 브랜치이며 다른 등록된 브랜치가 없습니다.\n등록 해제 후 활성 브랜치가 없는 상태가 됩니다.';
 
   showConfirm('저장소 등록 해제', confirmMsg,
     async () => {
       try {
         await callService('private_hacs', 'remove_repo', { component_id: componentId, branch });
         toast(name + ' (' + branch + ') 등록 해제 완료.', 'success');
-        // 서버에서 최신 상태 읽기 — 자동 활성화 반영
         await new Promise(r => setTimeout(r, 500));
         repos = await fetchRepos(); renderAll();
-      } catch (err) {
-        toast('등록 해제 실패: ' + err.message, 'error', 6000);
-      }
+      } catch (err) { toast('등록 해제 실패: ' + err.message, 'error', 6000); }
     });
 }
 
 async function confirmRestart() {
-  showConfirm(
-    'HA 재시작',
+  showConfirm('HA 재시작',
     'Home Assistant를 재시작하시겠습니까?\n\n재시작 중에는 모든 자동화와 통합이 잠시 중단됩니다.',
     async () => {
       try {
         await callService('homeassistant', 'restart', {});
         toast('HA 재시작 요청을 보냈습니다. 잠시 후 연결이 끊길 수 있습니다.', 'info', 6000);
-      } catch (err) {
-        toast('재시작 실패: ' + err.message, 'error', 5000);
-      }
-    }
-  );
+      } catch (err) { toast('재시작 실패: ' + err.message, 'error', 5000); }
+    });
 }
 
 async function refreshAll() {
@@ -1051,9 +1024,8 @@ async function refreshAll() {
     await new Promise(r => setTimeout(r, 2000));
     repos = await fetchRepos(); renderAll();
     toast('새로고침 완료', 'success');
-  } catch (err) {
-    toast('새로고침 실패: ' + err.message, 'error');
-  } finally { btn.disabled = false; btn.textContent = '🔄 새로고침'; }
+  } catch (err) { toast('새로고침 실패: ' + err.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = '🔄 새로고침'; }
 }
 
 // ── 릴리즈 선택 모달 ──
@@ -1069,8 +1041,7 @@ async function openReleaseModal(componentId, branch, name, installedVersion) {
   try {
     const res = await wsSend({
       type: 'call_service', domain: 'private_hacs', service: 'get_releases',
-      service_data: { component_id: componentId, branch },
-      return_response: true,
+      service_data: { component_id: componentId, branch }, return_response: true,
     });
     if (res.error) throw new Error(res.error.message || '조회 실패');
     const releases = ((res.result && res.result.response) || res.response || res.result || {}).releases || [];
@@ -1083,7 +1054,6 @@ async function openReleaseModal(componentId, branch, name, installedVersion) {
 
 function renderReleaseList(releases, installedVersion) {
   console.log('[Private HACS] renderReleaseList installedVersion:', installedVersion, 'releases:', releases.map(r => r.tag_name));
-  // v 접두사 정규화 — "3.0.7"과 "v3.0.7" 모두 같은 버전으로 처리
   const normalizeVer = v => v ? String(v).replace(/^v/, '') : '';
   const normalizedInstalled = normalizeVer(installedVersion);
   if (!releases.length) {
@@ -1127,9 +1097,8 @@ async function confirmReleaseInstall() {
     await callService('private_hacs', 'install', { component_id: componentId, branch, ref: selectedTag });
     toast(name + ' ' + selectedTag + ' ' + label + ' 완료! HA를 재시작해야 적용됩니다.', 'success', 6000);
     repos = await fetchRepos(); renderAll();
-  } catch (err) {
-    toast(label + ' 실패: ' + err.message, 'error', 6000);
-  } finally { busyKeys.delete(key); renderRepos(); }
+  } catch (err) { toast(label + ' 실패: ' + err.message, 'error', 6000); }
+  finally { busyKeys.delete(key); renderRepos(); }
 }
 
 function closeReleaseModal() {
@@ -1196,11 +1165,9 @@ function handleRepoInput(e) {
 async function lookupRepo(repo) {
   $el('repoPreview').classList.add('visible');
   $el('previewName').textContent = '조회 중...';
-  $el('previewDesc').textContent = '';
-  $el('previewComponent').textContent = '';
+  $el('previewDesc').textContent = ''; $el('previewComponent').textContent = '';
   $el('branchField').style.display = 'none';
-  $el('addSubmitBtn').disabled = true;
-  _pendingRepoInfo = null;
+  $el('addSubmitBtn').disabled = true; _pendingRepoInfo = null;
 
   try {
     const res = await wsSend({
@@ -1215,26 +1182,16 @@ async function lookupRepo(repo) {
     const defaultBranch = info.default_branch || 'main';
     const hasReleases = info.has_releases === true;
 
-    // 이미 등록된 브랜치 목록 (같은 component_id 기준)
     const registeredBranches = new Set(
       repos.filter(r => r.component_id === componentId).map(r => r.branch)
     );
 
-    // 릴리즈가 있는 저장소라면 모드 선택 가능
-    // - 첫 등록이라도 비기본 브랜치(non-default)를 선택하면 표시
-    // - 기본 브랜치(main 등)는 릴리즈 고정 (모드 선택 없음)
-    // - 이미 다른 브랜치가 등록된 경우도 동일
-    const showModeSelectForBranch = (branch) =>
-      hasReleases && branch !== defaultBranch;
+    const showModeSelectForBranch = (branch) => hasReleases && branch !== defaultBranch;
 
     _pendingRepoInfo = {
       repo, name: info.name || repo.split('/')[1],
-      component_id: componentId,
-      branch: null,
-      defaultBranch,
-      hasReleases,
-      showModeSelectForBranch,
-      update_mode: null,
+      component_id: componentId, branch: null,
+      defaultBranch, hasReleases, showModeSelectForBranch, update_mode: null,
     };
 
     $el('previewName').textContent = info.full_name || repo;
@@ -1243,10 +1200,8 @@ async function lookupRepo(repo) {
       ? 'component_id: ' + componentId + ' (' + componentIds.join(', ') + ' 중 첫 번째)'
       : 'component_id: ' + componentId;
 
-    // 브랜치 선택 목록 표시
     $el('branchField').style.display = 'block';
     renderBranchSelectList(allBranches, registeredBranches, defaultBranch);
-
   } catch (err) {
     $el('previewName').textContent = '조회 실패: ' + err.message;
     $el('branchField').style.display = 'none';
@@ -1269,8 +1224,7 @@ function renderBranchSelectList(allBranches, registeredBranches, defaultBranch) 
     return '<div class="' + cls + '" data-branch="' + esc(branch) + '" ' + onclick + '>'
       + '<div class="branch-item-radio"></div>'
       + '<span class="branch-item-name">' + esc(branch) + '</span>'
-      + defaultTag + registeredTag
-      + '</div>';
+      + defaultTag + registeredTag + '</div>';
   }).join('');
 }
 
@@ -1280,15 +1234,10 @@ function selectBranchItem(el) {
   el.classList.add('selected');
   if (_pendingRepoInfo && branch) {
     _pendingRepoInfo.branch = branch;
-
-    // 릴리즈 있는 저장소의 비기본 브랜치 → 모드 선택 표시
     const needsModeSelect = _pendingRepoInfo.hasReleases && branch !== _pendingRepoInfo.defaultBranch;
-
     if (needsModeSelect) {
       $el('updateModeField').style.display = 'block';
-      // 초기: 둘 다 흐리게
-      const btnR = $el('modeBtnRelease');
-      const btnC = $el('modeBtnCommit');
+      const btnR = $el('modeBtnRelease'), btnC = $el('modeBtnCommit');
       if (btnR) btnR.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
       if (btnC) btnC.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
       $el('updateModeHint').textContent = '업데이트 방식을 선택해주세요.';
@@ -1296,7 +1245,6 @@ function selectBranchItem(el) {
       $el('addSubmitBtn').disabled = true;
     } else {
       $el('updateModeField').style.display = 'none';
-      // 기본 브랜치 → release, 릴리즈 없는 저장소 → commit
       _pendingRepoInfo.update_mode = _pendingRepoInfo.hasReleases ? 'release' : 'commit';
       $el('addSubmitBtn').disabled = false;
     }
@@ -1306,8 +1254,7 @@ function selectBranchItem(el) {
 function selectUpdateMode(mode) {
   if (!_pendingRepoInfo) return;
   _pendingRepoInfo.update_mode = mode;
-  const btnRelease = $el('modeBtnRelease');
-  const btnCommit = $el('modeBtnCommit');
+  const btnRelease = $el('modeBtnRelease'), btnCommit = $el('modeBtnCommit');
   const hint = $el('updateModeHint');
   if (mode === 'release') {
     btnRelease.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
@@ -1318,14 +1265,11 @@ function selectUpdateMode(mode) {
     btnCommit.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
     hint.textContent = '해당 브랜치의 커밋 기준으로 업데이트합니다.';
   }
-  // 모드 선택 완료 → 추가 버튼 활성화
   if (_pendingRepoInfo.branch) $el('addSubmitBtn').disabled = false;
 }
 
 async function submitAddRepo() {
-  if (!_pendingRepoInfo || !_pendingRepoInfo.branch) {
-    toast('브랜치를 선택해주세요.', 'warning'); return;
-  }
+  if (!_pendingRepoInfo || !_pendingRepoInfo.branch) { toast('브랜치를 선택해주세요.', 'warning'); return; }
   if (_pendingRepoInfo.hasReleases && _pendingRepoInfo.branch !== _pendingRepoInfo.defaultBranch && !_pendingRepoInfo.update_mode) {
     toast('업데이트 방식을 선택해주세요.', 'warning'); return;
   }
@@ -1333,10 +1277,7 @@ async function submitAddRepo() {
   const btn = $el('addSubmitBtn');
   btn.disabled = true; btn.textContent = '추가 중...';
   try {
-    await callService('private_hacs', 'add_repo', {
-      repo, name, component_id, branch,
-      update_mode: update_mode || 'release',
-    });
+    await callService('private_hacs', 'add_repo', { repo, name, component_id, branch, update_mode: update_mode || 'release' });
     closeAddModal();
     toast(name + ' (' + branch + ') 저장소가 추가됐습니다. 잠시 후 목록에 표시됩니다.', 'success', 6000);
     await new Promise(r => setTimeout(r, 5000));
@@ -1350,21 +1291,14 @@ async function submitAddRepo() {
 function closeAddModal() {
   $el('addModal').classList.remove('open');
   _pendingRepoInfo = null;
-  const btn = $el('addSubmitBtn');
-  if (btn) { btn.disabled = true; btn.textContent = '추가'; }
-  const inp = $el('addRepo');
-  if (inp) inp.value = '';
-  const prev = $el('repoPreview');
-  if (prev) prev.classList.remove('visible');
-  const bf = $el('branchField');
-  if (bf) bf.style.display = 'none';
-  const bsl = $el('branchSelectList');
-  if (bsl) bsl.innerHTML = '';
-  const umf = $el('updateModeField');
-  if (umf) umf.style.display = 'none';
+  const btn = $el('addSubmitBtn'); if (btn) { btn.disabled = true; btn.textContent = '추가'; }
+  const inp = $el('addRepo'); if (inp) inp.value = '';
+  const prev = $el('repoPreview'); if (prev) prev.classList.remove('visible');
+  const bf = $el('branchField'); if (bf) bf.style.display = 'none';
+  const bsl = $el('branchSelectList'); if (bsl) bsl.innerHTML = '';
+  const umf = $el('updateModeField'); if (umf) umf.style.display = 'none';
 }
 
-// ── Confirm / Toast ──
 function showConfirm(title, msg, cb) {
   $el('confirmTitle').textContent = title;
   $el('confirmMsg').textContent = msg;
@@ -1386,9 +1320,7 @@ function toast(msg, type, duration) {
 if (!window._privateHacsKeydown) {
   window._privateHacsKeydown = true;
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      closeReleaseModal(); closeAddModal(); closeReadmeModal(); closeConfirm();
-    }
+    if (e.key === 'Escape') { closeReleaseModal(); closeAddModal(); closeReadmeModal(); closeConfirm(); }
   });
 }
 
