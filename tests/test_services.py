@@ -39,7 +39,7 @@ def _make_install_setup(repos, store, latest, branch="main"):
     coord = MagicMock()
     coord.repos = list(repos)
     coord.data = {entry_key: {"latest": latest, "repo": "Murianwind/private_hacs"}}
-    coord.async_request_refresh = AsyncMock()
+    coord.async_refresh = AsyncMock()
     hass, entry, ed, _ = make_hass_for_services(repos, store, github, coord, coord.data)
     return hass, entry, github
 
@@ -133,7 +133,7 @@ class TestDoInstall:
         coord = MagicMock()
         coord.repos = list(repos)
         coord.data = {}
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
         hass, _, _, _ = make_hass_for_services(repos, store, github, coord, {})
 
         with pytest.raises(HomeAssistantError):
@@ -226,7 +226,7 @@ class TestDoSetUpdateMode:
         coord.repos = list(repos)
         coord.data = {"private_hacs@main": {"update_mode": "release"}}
         coord.async_update_listeners = MagicMock()
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
         hass, entry, _, _ = make_hass_for_services(repos, store, github, coord, coord.data)
 
         await _do_set_update_mode(hass, "private_hacs", "main", "commit")
@@ -248,7 +248,7 @@ class TestDoSetUpdateMode:
         coord.repos = list(repos)
         coord.data = {"private_hacs@test": {"update_mode": "commit"}}
         coord.async_update_listeners = MagicMock()
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
         hass, entry, _, _ = make_hass_for_services(repos, store, github, coord, coord.data)
 
         await _do_set_update_mode(hass, "private_hacs", "test", "release")
@@ -291,7 +291,7 @@ class TestDoAddRepo:
         github.get_repo_info = AsyncMock(return_value={"name": "private_hacs", "default_branch": "main"})
         coord = MagicMock()
         coord.repos = []
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
         coord.async_update_listeners = MagicMock()
         hass, entry, ed, _ = make_hass_for_services(repos, store, github, coord, {})
         ed["async_add_entities"] = MagicMock()
@@ -357,7 +357,7 @@ class TestDoAddRepo:
         github.get_repo_info = AsyncMock(return_value={"name": "private_hacs"})
         coord = MagicMock()
         coord.repos = list(repos)
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
         coord.async_update_listeners = MagicMock()
         hass, entry, ed, _ = make_hass_for_services(repos, store, github, coord, {})
         ed["async_add_entities"] = MagicMock()
@@ -392,7 +392,7 @@ class TestDoUninstall:
         coord = MagicMock()
         coord.repos = list(repos)
         coord.data = {"private_hacs@main": {"component_id": "private_hacs"}}
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
         hass, _, _, _ = make_hass_for_services(repos, store, github, coord, coord.data)
 
         await _do_uninstall(hass, "private_hacs")
@@ -413,7 +413,7 @@ class TestDoUninstall:
         coord = MagicMock()
         coord.repos = []
         coord.data = {}
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
         hass, _, _, _ = make_hass_for_services(repos, store, github, coord, {})
 
         with pytest.raises(HomeAssistantError):
