@@ -330,3 +330,217 @@ async def test_validate_token__given_invalid_token__when_called__then_returns_fa
     client = _make_client([(401, {})])
     result = await client.validate_token()
     assert result is False
+
+
+# ══════════════════════════════════════════════════════════════════════
+# get_tree / verify_installed_sha — SHA를 모를 때 파일 비교로 확정
+# ══════════════════════════════════════════════════════════════════════
+
+class TestGetTree:
+
+    @pytest.mark.asyncio
+    async def test_given_valid_ref__when_called__then_returns_path_to_sha_map(self):
+        """
+        Given: 정상적인 git tree 응답 (custom_components/private_hacs/ 하위 파일들)
+        When:  get_tree 호출
+        Then:  {경로: blob_sha} 딕셔너리 반환 (blob만, tree/dir 제외)
+        """
+        tree_response = {
+            "tree": [
+                {"path": "custom_components", "type": "tree", "sha": "dirsha1"},
+                {"path": "custom_components/private_hacs", "type": "tree", "sha": "dirsha2"},
+                {"path": "custom_components/private_hacs/__init__.py", "type": "blob", "sha": "blobsha1"},
+                {"path": "custom_components/private_hacs/manifest.json", "type": "blob", "sha": "blobsha2"},
+            ],
+            "truncated": False,
+        }
+        client = _make_client([(200, tree_response)])
+        result = await client.get_tree("Murianwind/private_hacs", "abc123")
+
+        assert result == {
+            "custom_components/private_hacs/__init__.py": "blobsha1",
+            "custom_components/private_hacs/manifest.json": "blobsha2",
+        }
+
+    @pytest.mark.asyncio
+    async def test_given_api_error__when_called__then_returns_none(self):
+        """
+        Given: API 오류 (404 — ref 없음)
+        When:  get_tree 호출
+        Then:  None 반환
+        """
+        client = _make_client([(404, {})])
+        result = await client.get_tree("Murianwind/private_hacs", "nonexistent")
+        assert result is None
+
+
+class TestGitBlobSha:
+
+    def test_given_known_content__when_hashed__then_matches_git_hash_object(self):
+        """
+        Given: 알려진 내용 ("test content\n")
+        When:  _git_blob_sha 호출
+        Then:  실제 git hash-object 결과와 동일한 SHA-1 반환
+              (이 값은 `echo -n "test content" | git hash-object --stdin` 등으로 검증 가능한 표준 git blob SHA)
+        """
+        # "test content\n" 의 잘 알려진 git blob SHA
+        content = b"test content\n"
+        result = GitHubClient._git_blob_sha(content)
+        assert result == "d670460b4b4aece5915caf5c68d12f560a9fe3e"
+
+    def test_given_empty_content__when_hashed__then_returns_known_empty_blob_sha(self):
+        """
+        Given: 빈 파일
+        When:  _git_blob_sha 호출
+        Then:  git의 잘 알려진 빈 blob SHA 반환
+        """
+        result = GitHubClient._git_blob_sha(b"")
+        assert result == "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+
+
+class TestVerifyInstalledSha:
+
+    def _make_client_for_verify(self, tree_response):
+        return _make_client([(200, tree_response)])
+
+    @pytest.mark.asyncio
+    async def test_given_local_files_match_remote_tree__when_verified__then_returns_true(self):
+        """
+        Given: 로컬 파일 내용이 원격 HEAD의 blob SHA와 정확히 일치
+        When:  verify_installed_sha 호출
+        Then:  True 반환 (SHA를 안전하게 확정할 수 있음)
+        """
+        content_init = b"# init\n"
+        content_manifest = b'{"domain": "private_hacs"}\n'
+        sha_init = GitHubClient._git_blob_sha(content_init)
+        sha_manifest = GitHubClient._git_blob_sha(content_manifest)
+
+        tree_response = {
+            "tree": [
+                {"path": "custom_components/private_hacs/__init__.py", "type": "blob", "sha": sha_init},
+                {"path": "custom_components/private_hacs/manifest.json", "type": "blob", "sha": sha_manifest},
+            ],
+            "truncated": False,
+        }
+        client = self._make_client_for_verify(tree_response)
+
+        with tempfile.TemporaryDirectory() as base:
+            comp_dir = os.path.join(base, "private_hacs")
+            os.makedirs(comp_dir)
+            with open(os.path.join(comp_dir, "__init__.py"), "wb") as f:
+                f.write(content_init)
+            with open(os.path.join(comp_dir, "manifest.json"), "wb") as f:
+                f.write(content_manifest)
+
+            hass = MagicMock()
+            hass.config.path = MagicMock(return_value=comp_dir)
+            hass.async_add_executor_job = AsyncMock(
+                side_effect=lambda fn, *a: fn(*a)
+            )
+
+            result = await client.verify_installed_sha(
+                hass, "Murianwind/private_hacs", "private_hacs", "abc123"
+            )
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_given_local_file_differs__when_verified__then_returns_false(self):
+        """
+        Given: 로컬 파일 내용이 원격 HEAD와 다름 (로컬이 더 오래된 버전)
+        When:  verify_installed_sha 호출
+        Then:  False 반환 (SHA를 확정할 수 없음 — 안전하게 모름 상태 유지)
+        """
+        remote_sha = "remoteblobsha1234567890"
+        tree_response = {
+            "tree": [
+                {"path": "custom_components/private_hacs/__init__.py", "type": "blob", "sha": remote_sha},
+            ],
+            "truncated": False,
+        }
+        client = self._make_client_for_verify(tree_response)
+
+        with tempfile.TemporaryDirectory() as base:
+            comp_dir = os.path.join(base, "private_hacs")
+            os.makedirs(comp_dir)
+            with open(os.path.join(comp_dir, "__init__.py"), "wb") as f:
+                f.write(b"# old content, different from remote\n")
+
+            hass = MagicMock()
+            hass.config.path = MagicMock(return_value=comp_dir)
+            hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: fn(*a))
+
+            result = await client.verify_installed_sha(
+                hass, "Murianwind/private_hacs", "private_hacs", "abc123"
+            )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_given_local_file_missing__when_verified__then_returns_false(self):
+        """
+        Given: 원격 트리에는 있는 파일이 로컬 디스크에 없음
+        When:  verify_installed_sha 호출
+        Then:  False 반환
+        """
+        tree_response = {
+            "tree": [
+                {"path": "custom_components/private_hacs/__init__.py", "type": "blob", "sha": "somesha"},
+                {"path": "custom_components/private_hacs/missing_file.py", "type": "blob", "sha": "anothersha"},
+            ],
+            "truncated": False,
+        }
+        client = self._make_client_for_verify(tree_response)
+
+        with tempfile.TemporaryDirectory() as base:
+            comp_dir = os.path.join(base, "private_hacs")
+            os.makedirs(comp_dir)
+            # __init__.py만 만들고 missing_file.py는 만들지 않음
+            with open(os.path.join(comp_dir, "__init__.py"), "wb") as f:
+                f.write(b"x")
+
+            hass = MagicMock()
+            hass.config.path = MagicMock(return_value=comp_dir)
+            hass.async_add_executor_job = AsyncMock(side_effect=lambda fn, *a: fn(*a))
+
+            result = await client.verify_installed_sha(
+                hass, "Murianwind/private_hacs", "private_hacs", "abc123"
+            )
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_given_get_tree_fails__when_verified__then_returns_false(self):
+        """
+        Given: get_tree가 None 반환 (API 오류)
+        When:  verify_installed_sha 호출
+        Then:  False 반환 (검증 불가 — 모름 상태 유지)
+        """
+        client = _make_client([(404, {})])
+        hass = MagicMock()
+
+        result = await client.verify_installed_sha(
+            hass, "Murianwind/private_hacs", "private_hacs", "abc123"
+        )
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_given_no_files_for_component__when_verified__then_returns_false(self):
+        """
+        Given: 원격 트리에 해당 component_id 경로가 전혀 없음
+        When:  verify_installed_sha 호출
+        Then:  False 반환
+        """
+        tree_response = {
+            "tree": [
+                {"path": "README.md", "type": "blob", "sha": "somesha"},
+            ],
+            "truncated": False,
+        }
+        client = self._make_client_for_verify(tree_response)
+        hass = MagicMock()
+
+        result = await client.verify_installed_sha(
+            hass, "Murianwind/private_hacs", "private_hacs", "abc123"
+        )
+        assert result is False
