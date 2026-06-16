@@ -45,7 +45,7 @@ class TestDoToggleBranch:
             make_entry_key("private_hacs", "test"): {"active": False},
         }
         coord.async_update_listeners = MagicMock()
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
 
         hass, entry, _, _ = make_hass_for_services(repos, store, github, coord, coord.data)
 
@@ -74,7 +74,7 @@ class TestDoToggleBranch:
             make_entry_key("private_hacs", "test"): {"active": False},
         }
         coord.async_update_listeners = MagicMock()
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
 
         hass, entry, _, _ = make_hass_for_services(repos, store, github, coord, coord.data)
 
@@ -103,7 +103,7 @@ class TestDoToggleBranch:
         """
         Given: 활성 브랜치
         When:  _do_toggle_branch(active=False) 호출
-        Then:  coordinator.async_request_refresh 미호출 (비활성화 시 refresh 불필요)
+        Then:  coordinator.async_refresh 미호출 (비활성화 시 refresh 불필요)
         """
         repos = [make_repo_item(branch="main", active=True)]
         store = make_store()
@@ -112,13 +112,13 @@ class TestDoToggleBranch:
         coord.repos = list(repos)
         coord.data = {make_entry_key("private_hacs", "main"): {"active": True}}
         coord.async_update_listeners = MagicMock()
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
 
         hass, _, _, _ = make_hass_for_services(repos, store, github, coord, coord.data)
 
         await _do_toggle_branch(hass, "private_hacs", "main", False)
 
-        coord.async_request_refresh.assert_not_called()
+        coord.async_refresh.assert_not_called()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -132,7 +132,7 @@ class TestDoRefresh:
         """
         Given: coordinator 있음
         When:  _do_refresh 호출
-        Then:  coordinator.async_request_refresh 호출됨
+        Then:  coordinator.async_refresh 호출됨
         """
         repos = [make_repo_item()]
         store = make_store()
@@ -140,13 +140,13 @@ class TestDoRefresh:
         coord = MagicMock()
         coord.repos = list(repos)
         coord.data = {}
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
 
         hass, _, _, _ = make_hass_for_services(repos, store, github, coord, {})
 
         await _do_refresh(hass)
 
-        coord.async_request_refresh.assert_called_once()
+        coord.async_refresh.assert_called_once()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -389,7 +389,7 @@ class TestDoUninstallErrors:
         coord = MagicMock()
         coord.repos = list(repos)
         coord.data = {"private_hacs@main": {"component_id": "private_hacs"}}
-        coord.async_request_refresh = AsyncMock()
+        coord.async_refresh = AsyncMock()
 
         hass, _, _, _ = make_hass_for_services(repos, store, github, coord, coord.data)
 
