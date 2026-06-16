@@ -75,6 +75,7 @@ def _repo_data_commit(sha="abc123abc123", new_sha=None):
             "release_url": "https://github.com/Murianwind/private_hacs/commits/test",
             "release_summary": None,
             "commit_sha": new_sha or sha,
+            "remote_manifest_version": None,
         },
     }
 
@@ -139,39 +140,40 @@ class TestVersionProperties:
 
         assert entity.installed_version is None
 
-    def test_given_commit_mode_update_with_manifest_version__when_read__then_shows_sha_not_version(self, hass):
+    def test_given_commit_mode_update_with_manifest_version__when_read__then_shows_manifest_version(self, hass):
         """
         Given: 커밋 추적 브랜치, 업데이트 있음, 원격 manifest.json에 버전 문자열 존재
-               (latest.version이 SHA 대신 "2.1.3" 같은 버전 문자열로 채워진 상태)
         When:  latest_version 읽기
-        Then:  manifest 버전이 아니라 commit_sha 7자리 반환
-               (커밋 추적 모드는 항상 SHA로 식별되어야 함)
+        Then:  manifest 버전 문자열을 반환 (SHA는 사라지지 않고 extra_state_attributes의
+               remote_commit_sha로 별도 노출되어 패널 UI에서 "버전/SHA" 형태로 합쳐짐)
         """
         repo_cfg = make_repo_item(branch="test", update_mode="commit")
         entry_key = make_entry_key("private_hacs", "test")
         new_sha = "f186cd5abcdef"
         data = _repo_data_commit(sha="oldsha1234567", new_sha=new_sha)
-        # github.py가 remote manifest 버전을 우선시켜 version 필드를 "2.1.3"으로 채운 상황 재현
-        data["latest"]["version"] = "2.1.3"
-        entity = _make_entity(hass, repo_cfg, {entry_key: data})
-
-        assert entity.latest_version == new_sha[:7]
-        assert entity.latest_version != "2.1.3"
-
-    def test_given_commit_mode_update_no_sha__when_read__then_falls_back_to_version(self, hass):
-        """
-        Given: 커밋 추적 브랜치, 업데이트 있음, commit_sha 없음(비정상 케이스)
-        When:  latest_version 읽기
-        Then:  version 필드로 fallback
-        """
-        repo_cfg = make_repo_item(branch="test", update_mode="commit")
-        entry_key = make_entry_key("private_hacs", "test")
-        data = _repo_data_commit(sha="oldsha1234567", new_sha="newsha7654321")
-        data["latest"]["commit_sha"] = None
-        data["latest"]["version"] = "2.1.3"
+        data["latest"]["remote_manifest_version"] = "2.1.3"
         entity = _make_entity(hass, repo_cfg, {entry_key: data})
 
         assert entity.latest_version == "2.1.3"
+        # SHA는 latest_version에서 사라지지 않고 별도 attribute로 노출됨
+        assert entity.extra_state_attributes["remote_commit_sha"] == new_sha
+
+    def test_given_commit_mode_update_no_manifest_version__when_read__then_falls_back_to_sha(self, hass):
+        """
+        Given: 커밋 추적 브랜치, 업데이트 있음, 원격 manifest.json에 버전 문자열 없음
+               (remote_manifest_version=None — 흔한 경우, manifest.json에 버전을
+                기록하지 않는 저장소)
+        When:  latest_version 읽기
+        Then:  commit_sha 7자리로 fallback
+        """
+        repo_cfg = make_repo_item(branch="test", update_mode="commit")
+        entry_key = make_entry_key("private_hacs", "test")
+        new_sha = "f186cd5abcdef"
+        data = _repo_data_commit(sha="oldsha1234567", new_sha=new_sha)
+        data["latest"]["remote_manifest_version"] = None
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        assert entity.latest_version == new_sha[:7]
 
 
 # ══════════════════════════════════════════════════════════════════════
