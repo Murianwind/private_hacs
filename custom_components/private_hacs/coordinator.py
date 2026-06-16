@@ -112,26 +112,55 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 )
                 version_source = "store"
 
-            # branch 타입이고 설치됐는데 SHA가 없으면 현재 remote SHA로 복구
-            # has_update 계산 전에 수행해야 정확한 비교 가능
-            if (
+            # 브랜치(커밋 추적) 타입이고 설치는 됐는데 installed_commit_sha가
+            # store에 없는 경우: "현재 remote SHA = 설치된 SHA"로 추측해서
+            # 덮어써버리면 실제 변경 사항을 영원히 놓치게 된다(과거 버그).
+            #
+            # 대신 파일 내용을 직접 비교해 검증을 시도한다(verify_installed_sha).
+            # 로컬 파일과 원격 HEAD의 모든 blob SHA가 일치하면 — 즉 설치된
+            # 파일이 정말로 HEAD와 동일하면 — 그때만 SHA를 안전하게 확정한다.
+            # 검증에 실패하거나 다르면 "알 수 없음" 상태를 유지하고
+            # has_update=True로 표시해 사용자가 재설치하도록 유도한다.
+            sha_unknown_but_installed = (
                 is_installed
                 and installed_version
                 and not installed_commit_sha
                 and latest
                 and latest.get("type") == "branch"
                 and latest.get("commit_sha")
-            ):
-                installed_commit_sha = latest["commit_sha"]
-                await self.store.async_set_branch(
-                    component_id, branch, {"installed_commit_sha": installed_commit_sha}
-                )
-                _LOGGER.debug(
-                    "Auto-recovered installed_commit_sha for %s@%s: %s",
-                    component_id, branch, installed_commit_sha[:7],
-                )
+            )
+
+            if sha_unknown_but_installed:
+                head_sha = latest["commit_sha"]
+                try:
+                    verified = await self.github.verify_installed_sha(
+                        self.hass, repo, component_id, head_sha
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "verify_installed_sha failed for %s@%s: %s", component_id, branch, err
+                    )
+                    verified = False
+
+                if verified:
+                    installed_commit_sha = head_sha
+                    await self.store.async_set_branch(
+                        component_id, branch, {"installed_commit_sha": installed_commit_sha}
+                    )
+                    _LOGGER.debug(
+                        "Verified installed files match %s@%s HEAD — confirmed SHA %s",
+                        component_id, branch, installed_commit_sha[:7],
+                    )
+                    sha_unknown_but_installed = False
 
             has_update = self._compute_has_update(latest, installed_version, installed_commit_sha)
+            if sha_unknown_but_installed:
+                has_update = True
+                _LOGGER.debug(
+                    "%s@%s: installed_commit_sha unknown and could not be verified — "
+                    "flagging has_update so a reinstall can record the correct SHA",
+                    component_id, branch,
+                )
 
             # latest가 branch 타입인데 update_mode가 release인 경우
             # → 릴리즈/태그가 없는 저장소 확인 — config entry에 commit으로 영구 저장
@@ -203,15 +232,18 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             return _strip_v(str(installed_version)) != _strip_v(str(latest.get("version", "")))
 
         if latest_type == "branch":
-            remote_manifest_version = latest.get("remote_manifest_version")
+            # 커밋 추적 브랜치: SHA가 1순위 판단 기준.
+            # 두 SHA 모두 있으면 그것만으로 판단을 끝낸다 — manifest 버전
+            # 문자열이 무엇이든 SHA 비교가 우선한다.
             remote_commit_sha = latest.get("commit_sha")
-
-            if remote_manifest_version:
-                if remote_manifest_version != installed_version:
-                    return True
-
             if remote_commit_sha and installed_commit_sha:
                 return remote_commit_sha != installed_commit_sha
+
+            # SHA로 판단할 수 없는 경우(설치 SHA를 모름)에만
+            # manifest.json 버전 문자열을 보조 수단으로 사용
+            remote_manifest_version = latest.get("remote_manifest_version")
+            if remote_manifest_version:
+                return remote_manifest_version != installed_version
 
         return False
 
