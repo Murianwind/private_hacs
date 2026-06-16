@@ -140,7 +140,15 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             return self._repo_data.get("installed_version")
         if not self._repo_data.get("has_update", False):
             return self._repo_data.get("installed_version")
-        return self._latest.get("version")
+        latest = self._latest
+        # 커밋 추적(branch 타입)은 항상 SHA 7자리를 표시.
+        # manifest.json에 버전 문자열이 있어도 SHA를 우선해
+        # "최신: 2.1.3"처럼 SHA가 빠진 표시가 나오지 않도록 한다.
+        if latest.get("type") == "branch":
+            commit_sha = latest.get("commit_sha")
+            if commit_sha:
+                return commit_sha[:7]
+        return latest.get("version")
 
     @property
     def release_url(self) -> str | None:
