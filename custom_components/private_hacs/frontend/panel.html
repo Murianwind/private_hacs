@@ -476,7 +476,13 @@
   </div>
   <div class="header-actions">
     <button class="btn btn-sm" onclick="refreshAll()" id="refreshBtn">🔄 새로고침</button>
-    <button class="btn btn-sm btn-restart" onclick="confirmRestart()">⏻ HA 재시작</button>
+    <button class="btn btn-sm btn-restart" onclick="confirmRestart()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+        <line x1="12" y1="2" x2="12" y2="12"/>
+      </svg>
+      HA 재시작
+    </button>
     <button class="btn btn-sm" onclick="openAddModal()">＋ 저장소 추가</button>
   </div>
 </div>
