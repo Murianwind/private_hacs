@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -73,6 +74,88 @@ class GitHubClient:
             if resp.status == 200:
                 return await resp.json()
             return None
+
+    # ------------------------------------------------------------------
+    # 설치된 SHA를 모를 때, 로컬 파일을 원격 HEAD와 비교해 확정 시도
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _git_blob_sha(content: bytes) -> str:
+        """Git이 사용하는 blob SHA-1을 계산합니다 (git hash-object와 동일한 결과)."""
+        header = f"blob {len(content)}\0".encode()
+        return hashlib.sha1(header + content).hexdigest()
+
+    async def get_tree(self, repo: str, ref: str) -> dict[str, str] | None:
+        """
+        ref(브랜치/커밋)의 전체 파일 트리를 {경로: blob_sha} 형태로 반환합니다.
+        Git Trees API(recursive=1) 한 번으로 전체 구조를 가져옵니다.
+        """
+        url = f"{_GITHUB_API}/repos/{repo}/git/trees/{ref}?recursive=1"
+        async with self._session.get(url, headers=self._headers()) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            if data.get("truncated"):
+                _LOGGER.debug("get_tree %s@%s: 응답이 잘렸습니다(파일 too many)", repo, ref)
+            return {
+                item["path"]: item["sha"]
+                for item in data.get("tree", [])
+                if item.get("type") == "blob"
+            }
+
+    async def verify_installed_sha(
+        self, hass: HomeAssistant, repo: str, component_id: str, head_sha: str
+    ) -> bool:
+        """
+        디스크에 설치된 컴포넌트 파일들이 원격 head_sha 커밋과
+        100% 동일한지 확인합니다.
+
+        방법: head_sha 커밋의 git tree에서 custom_components/{component_id}/
+        하위 파일들의 blob SHA 목록을 가져오고, 로컬 파일의 blob SHA를
+        직접 계산(git hash-object 알고리즘)해서 전부 일치하는지 비교합니다.
+
+        전부 일치하면 True — 이 경우에만 installed_commit_sha를 head_sha로
+        안전하게 확정할 수 있습니다. 하나라도 다르거나 파일이 없으면 False를
+        반환하여, 호출 측이 "알 수 없음" 상태를 유지하고 업데이트로 표시하게
+        합니다. 즉, 모호할 때는 항상 "업데이트 필요"로 안전하게 처리합니다.
+        """
+        remote_tree = await self.get_tree(repo, head_sha)
+        if remote_tree is None:
+            return False
+
+        prefix = f"custom_components/{component_id}/"
+        remote_files = {
+            path[len(prefix):]: sha
+            for path, sha in remote_tree.items()
+            if path.startswith(prefix)
+        }
+        if not remote_files:
+            return False
+
+        local_dir = hass.config.path("custom_components", component_id)
+
+        def _read_and_hash_all() -> dict[str, str] | None:
+            local_hashes: dict[str, str] = {}
+            for rel_path in remote_files:
+                full_path = os.path.join(local_dir, *rel_path.split("/"))
+                if not os.path.isfile(full_path):
+                    return None
+                try:
+                    with open(full_path, "rb") as f:
+                        content = f.read()
+                except OSError:
+                    return None
+                local_hashes[rel_path] = self._git_blob_sha(content)
+            return local_hashes
+
+        local_hashes = await hass.async_add_executor_job(_read_and_hash_all)
+        if local_hashes is None:
+            return False
+
+        return all(
+            local_hashes.get(rel_path) == sha
+            for rel_path, sha in remote_files.items()
+        )
 
     async def get_readme(self, repo: str, branch: str = "main") -> str | None:
         """Fetch README content (decoded from base64)."""
