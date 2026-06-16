@@ -386,7 +386,8 @@ class TestGitBlobSha:
         # "test content\n" 의 잘 알려진 git blob SHA
         content = b"test content\n"
         result = GitHubClient._git_blob_sha(content)
-        assert result == "d670460b4b4aece5915caf5c68d12f560a9fe3e"
+        assert result == "d670460b4b4aece5915caf5c68d12f560a9fe3e4"
+        assert len(result) == 40
 
     def test_given_empty_content__when_hashed__then_returns_known_empty_blob_sha(self):
         """
