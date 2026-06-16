@@ -1,0 +1,252 @@
+name: Pytest
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+  workflow_dispatch:  # 수동 실행 — GitHub Actions 탭에서 Run workflow 클릭
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# 같은 브랜치에 연속 push가 있으면 이전 실행을 취소하고 마지막 push만 실행
+concurrency:
+  group: pytest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: requirements-test.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip --quiet
+          pip install -r requirements-test.txt coverage pytest-cov --quiet
+
+      - name: Run Pytest with Coverage
+        run: |
+          set +e
+          pytest tests/ \
+            --cov=custom_components.private_hacs \
+            --cov-config=pytest.ini \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --no-header \
+            --tb=short \
+            --color=no \
+            --durations=5 \
+            -p no:warnings \
+            -v \
+            2>&1 | tee pytest-coverage.txt
+          PYTEST_EXIT=${PIPESTATUS[0]}
+          echo "PYTEST_EXIT=$PYTEST_EXIT" >> $GITHUB_ENV
+          exit $PYTEST_EXIT
+
+      - name: Publish Test Summary
+        if: always()
+        run: |
+          set +e
+          SUMMARY_LINE=$(grep -E "[0-9]+ (passed|failed|error)" pytest-coverage.txt | tail -1 || echo "결과 없음")
+
+          # ── 헤더 + 요약 ──────────────────────────────────────────────
+          if [ "${PYTEST_EXIT:-0}" = "0" ]; then
+            echo "### ✅ Pytest 결과: 전체 통과" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ Pytest 결과: 실패 있음" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**브랜치:** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**${SUMMARY_LINE}**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ── 테스트 파일별 결과 요약 ────────────────────────────────
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>📁 테스트 파일별 결과</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          for f in test_github test_github_extra test_coordinator test_services test_services_extra test_store test_helpers_and_store_extra test_update; do
+            PASS=$(grep -E "::.*PASSED|PASSED.*::" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py" | wc -l | tr -d ' ')
+            FAIL=$(grep -E "::.*FAILED|FAILED.*::|^FAILED tests/${f}" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py" | wc -l | tr -d ' ')
+            ERR=$( grep -E "::.*ERROR|ERROR.*::"   pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py" | wc -l | tr -d ' ')
+            SKIP=$(grep -E "::.*SKIPPED|SKIPPED.*::" pytest-coverage.txt 2>/dev/null | grep "tests/${f}.py" | wc -l | tr -d ' ')
+            TOTAL=$(( PASS + FAIL + ERR + SKIP ))
+            if [ "${TOTAL}" = "0" ]; then
+              echo "⚠️  ${f}.py  — 수집 실패 (import 오류 등)" >> $GITHUB_STEP_SUMMARY
+            elif [ "${FAIL}" -gt "0" ] || [ "${ERR}" -gt "0" ]; then
+              echo "❌ ${f}.py  — ${PASS}/${TOTAL} 통과  (실패 ${FAIL}, 오류 ${ERR})" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "✅ ${f}.py  — ${PASS}/${TOTAL} 통과" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ── 실행된 테스트 전체 목록 (접기) ────────────────────────
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>📋 실행된 테스트 전체 목록 (클릭하여 펼치기)</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          {
+            grep -E "PASSED|FAILED|ERROR|SKIPPED" pytest-coverage.txt \
+              | grep "::" \
+              | sed 's/  *\[[ 0-9]*%\]$//' \
+              | sed 's/ PASSED$/  ✓/' \
+              | sed 's/ FAILED$/  ✗  ← FAILED/' \
+              | sed 's/ ERROR$/  !  ← ERROR/' \
+              | sed 's/ SKIPPED$/  (skipped)/'
+          } >> $GITHUB_STEP_SUMMARY || echo "(없음)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # ── 수집 오류 ───────────────────────────────────────────────
+          COLLECT_ERRORS=$(grep "ERROR collecting" pytest-coverage.txt 2>/dev/null || true)
+          if [ -n "$COLLECT_ERRORS" ]; then
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "### ⚠️ 수집 오류 (import 실패 등)" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep -A3 "ERROR collecting" pytest-coverage.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # ── 실패 상세 ───────────────────────────────────────────────
+          FAIL_COUNT=$(grep -cE "^FAILED " pytest-coverage.txt 2>/dev/null || echo 0)
+          if [ "${FAIL_COUNT}" -gt "0" ] 2>/dev/null; then
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "### ❌ 실패 상세" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            echo "**실패한 테스트:**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            grep "^FAILED " pytest-coverage.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            echo "**Traceback (파일:라인):**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            awk '
+              /^_{5,}/ { in_fail=1; print ""; print; next }
+              in_fail && /^(FAILED|={5,})/ { in_fail=0; next }
+              in_fail && /^[[:space:]]*(tests|custom_components)\/.*\.py:[0-9]+:/ { print; next }
+              in_fail && /^E[[:space:]]/ { print; next }
+            ' pytest-coverage.txt >> $GITHUB_STEP_SUMMARY || true
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+
+            echo "**원인 분류:**" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            SRC=$(grep -oE "custom_components/[^ ]+\.py:[0-9]+" pytest-coverage.txt | sort -u || true)
+            TEST=$(grep -oE "tests/[^ ]+\.py:[0-9]+" pytest-coverage.txt | sort -u || true)
+            if [ -n "$SRC" ]; then
+              echo "📦 소스 코드 문제 (custom_components/):" >> $GITHUB_STEP_SUMMARY
+              echo "$SRC" >> $GITHUB_STEP_SUMMARY
+              echo "  → coordinator.py / github.py / services.py 등 실제 코드 버그일 가능성" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "📦 소스 코드 문제: 없음" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo "" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$TEST" ]; then
+              echo "🧪 테스트 코드 문제 (tests/):" >> $GITHUB_STEP_SUMMARY
+              echo "$TEST" >> $GITHUB_STEP_SUMMARY
+              echo "  → 테스트 assertion 또는 mock 설정 문제일 가능성" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "🧪 테스트 코드 문제: 없음" >> $GITHUB_STEP_SUMMARY
+            fi
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Generate Statement Coverage Report
+        if: always()
+        run: |
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 1. 구문 커버리지 상세 (Statement Coverage)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 파일 경로 | 전체 라인 수 | 실행 가능 구문 | 실행 안 됨 | 구문 커버리지(%) | 누락된 구문 라인 |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---|---:|---:|---:|---:|:---|" >> $GITHUB_STEP_SUMMARY
+
+          grep -E "^custom_components" pytest-coverage.txt | while read -r line; do
+            FILE_PATH=$(echo $line | awk '{print $1}' | sed 's|custom_components/private_hacs/||')
+            FULL_PATH="custom_components/private_hacs/${FILE_PATH}"
+            STMTS=$(echo $line | awk '{print $2}')
+            MISS=$(echo $line | awk '{print $3}')
+
+            TOTAL_LINES=$(wc -l < "$FULL_PATH" 2>/dev/null | tr -d ' ' || echo "-")
+
+            PER=$(awk -v s="$STMTS" -v m="$MISS" 'BEGIN {if (s > 0) printf "%.1f%%", ((s - m) / s) * 100; else print "0%"}')
+
+            MISSING_RAW=$(echo $line | awk '{for(i=7;i<=NF;i++) printf "%s ", $i}')
+            MISSING_LINES=$(echo $MISSING_RAW | tr ' ' '\n' | grep -v "\->" | tr '\n' ' ' | sed 's/ $//')
+            if [ -z "$MISSING_LINES" ]; then MISSING_LINES="-"; fi
+
+            echo "| ${FILE_PATH} | ${TOTAL_LINES} | ${STMTS} | ${MISS} | **${PER}** | ${MISSING_LINES} |" >> $GITHUB_STEP_SUMMARY
+          done
+
+      - name: Generate Branch Coverage Report
+        if: always()
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌿 2. 분기 커버리지 상세 (Branch Coverage)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 파일 경로 | 전체 분기 수 | 실행된 분기 | 실행 안 됨 | 분기 커버리지(%) | 누락된 분기 (화살표) |" >> $GITHUB_STEP_SUMMARY
+          echo "|:---|---:|---:|---:|---:|:---|" >> $GITHUB_STEP_SUMMARY
+
+          grep -E "^custom_components" pytest-coverage.txt | while read -r line; do
+            FILE_PATH=$(echo $line | awk '{print $1}' | sed 's|custom_components/private_hacs/||')
+            BRANCH=$(echo $line | awk '{print $4}')
+            BR_MISS=$(echo $line | awk '{print $5}')
+
+            PER=$(awk -v b="$BRANCH" -v m="$BR_MISS" 'BEGIN {if (b > 0) printf "%.1f%%", ((b - m) / b) * 100; else print "-"}')
+
+            MISSING_RAW=$(echo $line | awk '{for(i=7;i<=NF;i++) printf "%s ", $i}')
+            MISSING_BRANCHES=$(echo $MISSING_RAW | tr ' ' '\n' | grep "\->" | tr '\n' ' ' | sed 's/ $//')
+            if [ -z "$MISSING_BRANCHES" ]; then MISSING_BRANCHES="-"; fi
+
+            if [ "$BRANCH" = "0" ] || [ -z "$BRANCH" ]; then
+              echo "| ${FILE_PATH} | 0 | 0 | 0 | - | - |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| ${FILE_PATH} | ${BRANCH} | $(( BRANCH - BR_MISS )) | ${BR_MISS} | **${PER}** | ${MISSING_BRANCHES} |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+      - name: Generate Final Coverage Summary
+        if: always()
+        run: |
+          TOTAL_LINE=$(grep "^TOTAL" pytest-coverage.txt || true)
+          STMTS=$(echo $TOTAL_LINE | awk '{print $2}')
+          MISS=$(echo $TOTAL_LINE | awk '{print $3}')
+          BRANCH=$(echo $TOTAL_LINE | awk '{print $4}')
+          BR_MISS=$(echo $TOTAL_LINE | awk '{print $5}')
+
+          STMT_PER=$(awk -v s="$STMTS" -v m="$MISS" 'BEGIN {if (s > 0) printf "%.2f%%", ((s - m) / s) * 100; else print "0%"}')
+          BRANCH_PER=$(awk -v b="$BRANCH" -v m="$BR_MISS" 'BEGIN {if (b > 0) printf "%.2f%%", ((b - m) / b) * 100; else print "0%"}')
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📈 최종 커버리지 요약" >> $GITHUB_STEP_SUMMARY
+          echo "| 측정 방식 | 커버리지율 | 상세 수치 (성공/전체) |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **구문(Statement)** | **${STMT_PER}** | $(( STMTS - MISS )) / ${STMTS} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **분기(Branch)**    | **${BRANCH_PER}** | $(( BRANCH - BR_MISS )) / ${BRANCH} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true

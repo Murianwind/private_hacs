@@ -1,0 +1,3 @@
+pytest-homeassistant-custom-component==0.13.316
+coverage
+pytest-cov
