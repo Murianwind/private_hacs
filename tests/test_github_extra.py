@@ -545,3 +545,54 @@ class TestVerifyInstalledSha:
             hass, "Murianwind/private_hacs", "private_hacs", "abc123"
         )
         assert result is False
+
+
+# ══════════════════════════════════════════════════════════════════════
+# has_any_release_or_tag — commit 모드에서 릴리즈/태그 존재 여부 확인
+# ══════════════════════════════════════════════════════════════════════
+
+class TestHasAnyReleaseOrTag:
+
+    @pytest.mark.asyncio
+    async def test_given_releases_exist__when_checked__then_returns_true(self):
+        """
+        Given: 릴리즈가 1개 이상 존재
+        When:  has_any_release_or_tag 호출
+        Then:  True 반환 (태그 API는 호출할 필요 없이 바로 확정)
+        """
+        client = _make_client([(200, [{"tag_name": "v1.0.0"}])])
+        result = await client.has_any_release_or_tag("Murianwind/private_hacs")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_given_no_releases_but_tags_exist__when_checked__then_returns_true(self):
+        """
+        Given: 릴리즈는 없지만 태그는 존재
+        When:  has_any_release_or_tag 호출
+        Then:  True 반환 (릴리즈 확인 후 태그까지 확인)
+        """
+        client = _make_client([(200, []), (200, [{"name": "v1.0.0"}])])
+        result = await client.has_any_release_or_tag("Murianwind/private_hacs")
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_given_no_releases_and_no_tags__when_checked__then_returns_false(self):
+        """
+        Given: 릴리즈도 태그도 없음
+        When:  has_any_release_or_tag 호출
+        Then:  False 반환
+        """
+        client = _make_client([(200, []), (200, [])])
+        result = await client.has_any_release_or_tag("Murianwind/private_hacs")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_given_api_errors__when_checked__then_returns_false(self):
+        """
+        Given: 릴리즈/태그 API 모두 오류 응답
+        When:  has_any_release_or_tag 호출
+        Then:  False 반환 (안전한 기본값)
+        """
+        client = _make_client([(404, {}), (404, {})])
+        result = await client.has_any_release_or_tag("Murianwind/private_hacs")
+        assert result is False
