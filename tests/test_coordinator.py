@@ -263,13 +263,13 @@ def _make_coord(hass, repos, github, store=None):
         return False
     coord._check_installed = _patched_check
 
-    # github.has_any_release_or_tag를 명시적으로 설정하지 않은 테스트에서는
-    # AsyncMock()이 자동 생성한 mock 객체가 항상 truthy라서 "릴리즈가
-    # 있다"로 잘못 평가될 수 있다. 안전한 기본값(False)을 깔아둔다.
-    # _make_coord 호출은 보통 github 설정 코드 다음에 오므로, 테스트가
-    # has_any_release_or_tag를 직접 설정하고 싶으면 _make_coord 호출
-    # 이후에 다시 할당하면 된다(같은 객체 참조이므로 정상 동작).
-    github.has_any_release_or_tag = AsyncMock(return_value=False)
+    # github.has_any_release_or_tag를 테스트가 명시적으로 할당했다면
+    # (= vars(github)에 키로 존재) 그 값을 그대로 둔다. 한 번도 접근/
+    # 할당되지 않은 속성은 AsyncMock()이 호출 시점에 자동 생성하며 그
+    # 결과는 항상 truthy라서 "릴리즈가 있다"로 잘못 평가될 수 있다.
+    # 명시적으로 할당된 적이 없을 때만 안전한 기본값(False)을 깐다.
+    if "has_any_release_or_tag" not in vars(github):
+        github.has_any_release_or_tag = AsyncMock(return_value=False)
 
     return coord
 
