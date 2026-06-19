@@ -228,6 +228,25 @@ class GitHubClient:
             _LOGGER.debug("resolve_branch_latest %s@%s → %s", repo, branch, resp.status)
             return None
 
+    async def has_any_release_or_tag(self, repo: str) -> bool:
+        """
+        저장소에 릴리즈 또는 태그가 하나라도 있는지 확인합니다(목록 1개만 요청).
+        결과는 한 번 확인되면 store에 캐시되어 재사용되므로(coordinator 참고),
+        이 메서드 자체는 폴링마다 호출되지 않는다 — 캐시가 없을 때만 호출된다.
+        """
+        url = f"{_GITHUB_API}/repos/{repo}/releases?per_page=1"
+        async with self._session.get(url, headers=self._headers()) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                if data:
+                    return True
+        url = f"{_GITHUB_API}/repos/{repo}/tags?per_page=1"
+        async with self._session.get(url, headers=self._headers()) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return bool(data)
+        return False
+
     async def resolve_latest(
         self, repo: str, component_id: str, branch: str = "main"
     ) -> dict | None:
