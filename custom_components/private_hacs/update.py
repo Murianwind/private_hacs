@@ -131,15 +131,24 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
 
     @property
     def installed_version(self) -> str | None:
-        return self._repo_data.get("installed_version")
+        # 커밋 추적(branch 타입) 브랜치는 설치 버전도 SHA 7자리를 우선 표시.
+        # latest_version과 동일한 "1순위 SHA, 2순위 manifest 버전" 원칙을
+        # 적용해, 알림 등에서 "0.1.0 → fd0410e"처럼 서로 다른 종류의 값이
+        # 비교되지 않고 "abc1234 → fd0410e"처럼 같은 형식으로 비교되게 한다.
+        manifest_version = self._repo_data.get("installed_version")
+        if self._repo_data.get("update_mode") == "commit":
+            sha = self._repo_data.get("installed_commit_sha")
+            if sha:
+                return sha[:7]
+        return manifest_version
 
     @property
     def latest_version(self) -> str | None:
         # 비활성 브랜치는 버전 불일치로 인한 업데이트 알림을 표시하지 않음
         if not self._is_active:
-            return self._repo_data.get("installed_version")
+            return self.installed_version
         if not self._repo_data.get("has_update", False):
-            return self._repo_data.get("installed_version")
+            return self.installed_version
         latest = self._latest
         # 커밋 추적(branch 타입): 1순위 SHA, 2순위 manifest 버전.
         # SHA가 있으면 항상 SHA 7자리를 우선 표시한다.
@@ -194,6 +203,10 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             "remote_commit_sha": latest.get("commit_sha"),
             "remote_manifest_version": latest.get("remote_manifest_version"),
             "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
+            # installed_version은 commit 모드에서 SHA 7자리를 우선 반환하므로,
+            # manifest.json에 기록된 원본 버전 문자열은 별도로 노출해 패널
+            # UI가 "버전/SHA" 형태로 함께 보여줄 수 있게 한다.
+            "installed_manifest_version": self._repo_data.get("installed_version"),
             "has_icon": self._repo_data.get("has_icon", False),
             # commit 모드는 릴리즈를 조회하지 않으므로 latest_type만으로는
             # "릴리즈가 진짜 없는지" 판단할 수 없다. coordinator가 캐시해둔
