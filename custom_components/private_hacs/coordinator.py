@@ -83,13 +83,44 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
             # latest 조회
             # - update_mode=release: release → tag → branch 순 (기존 동작)
             # - update_mode=commit: branch HEAD만 조회
+            #
+            # commit 모드는 릴리즈를 아예 조회하지 않으므로, "이 저장소에
+            # 릴리즈/태그가 있는지"는 패널 UI가 모드 전환 버튼을 보여줄지
+            # 판단하는 데 별도로 필요하다. 릴리즈 유무는 한 번 확인되면
+            # 사실상 바뀌지 않는 정보이므로(릴리즈가 생겼다가 전부
+            # 사라지는 경우는 드묾) store에 캐시해두고, 캐시가 없을 때만
+            # (False일 때만) 가볍게 재확인한다 — 매 폴링 API 호출을 피한다.
             try:
                 if update_mode == UPDATE_MODE_COMMIT:
                     latest = await self.github.resolve_branch_latest(
                         repo, component_id, branch
                     )
+                    if latest is not None:
+                        store_entry_for_cache = self.store.get_branch(component_id, branch)
+                        cached_has_release = store_entry_for_cache.get("has_release_or_tag", False)
+                        if not cached_has_release:
+                            try:
+                                cached_has_release = await self.github.has_any_release_or_tag(repo)
+                            except Exception as err:
+                                _LOGGER.debug(
+                                    "has_any_release_or_tag failed for %s: %s", repo, err
+                                )
+                                cached_has_release = False
+                            if cached_has_release:
+                                await self.store.async_set_branch(
+                                    component_id, branch, {"has_release_or_tag": True}
+                                )
+                        latest["has_release_or_tag"] = cached_has_release
                 else:
                     latest = await self.github.resolve_latest(repo, component_id, branch)
+                    if latest is not None:
+                        # release 모드에서 release/tag 타입이 나왔다면 릴리즈가
+                        # 있다는 게 이미 증명된 것이므로 캐시를 채워둔다
+                        # (나중에 commit 모드로 전환해도 재확인이 필요 없도록).
+                        if latest.get("type") in ("release", "tag"):
+                            await self.store.async_set_branch(
+                                component_id, branch, {"has_release_or_tag": True}
+                            )
             except ConfigEntryAuthFailed:
                 raise
             except Exception as err:
