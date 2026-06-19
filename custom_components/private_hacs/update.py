@@ -195,6 +195,11 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
             "remote_manifest_version": latest.get("remote_manifest_version"),
             "installed_commit_sha": self._repo_data.get("installed_commit_sha"),
             "has_icon": self._repo_data.get("has_icon", False),
+            # commit 모드는 릴리즈를 조회하지 않으므로 latest_type만으로는
+            # "릴리즈가 진짜 없는지" 판단할 수 없다. coordinator가 캐시해둔
+            # 값을 그대로 노출해 패널 UI가 모드 전환 가능 여부를 정확히
+            # 판단하도록 한다.
+            "has_release_or_tag": latest.get("has_release_or_tag", False),
         }
 
     async def async_release_notes(self) -> str | None:
