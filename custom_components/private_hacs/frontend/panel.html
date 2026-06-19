@@ -700,6 +700,7 @@ async function fetchRepos() {
         update_mode: a.update_mode || 'release',
         version_source: a.version_source || (installed ? 'store' : 'none'),
         latest_type: a.latest_type || null,
+        has_release_or_tag: a.has_release_or_tag === true,
         has_icon: a.has_icon || false,
       };
     })
@@ -834,15 +835,27 @@ function branchRowHTML(r) {
     ? '<a href="' + esc(r.release_url) + '" target="_blank" class="release-link">' + linkLabel + '</a>' : '';
 
   const isReleaseType = r.latest_type === 'release' || r.latest_type === 'tag';
+  // commit 모드는 릴리즈를 아예 조회하지 않으므로 latest_type만으로는
+  // "릴리즈가 진짜 없는지" 판단할 수 없다(사용자가 의도적으로 commit을
+  // 선택했을 뿐 릴리즈가 있을 수도 있음). coordinator가 캐시해둔
+  // has_release_or_tag로 정확히 판단한다.
+  const noReleaseAvailable = !r.has_release_or_tag;
 
-  const updateModeBadge = busy
-    ? '<span class="badge" style="background:var(--surface3);color:var(--text-secondary)">'
-      + (r.update_mode === 'commit' ? '커밋 추적' : '릴리즈') + '</span>'
-    : r.update_mode === 'commit'
-    ? '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:pointer" '
-      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경">커밋 추적</span>'
-    : '<span class="badge" style="background:rgba(3,169,244,.1);color:var(--primary);cursor:pointer" '
+  let updateModeBadge;
+  if (busy) {
+    updateModeBadge = '<span class="badge" style="background:var(--surface3);color:var(--text-secondary)">'
+      + (r.update_mode === 'commit' ? '커밋 추적' : '릴리즈') + '</span>';
+  } else if (r.update_mode === 'commit' && noReleaseAvailable) {
+    // 릴리즈/태그가 없어 강제로 커밋 추적 중 — 전환 불가 안내
+    updateModeBadge = '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:default;opacity:.7" '
+      + 'title="이 저장소에는 릴리즈/태그가 없어 커밋 추적만 가능합니다. 릴리즈가 생성되면 전환할 수 있습니다.">커밋 추적</span>';
+  } else if (r.update_mode === 'commit') {
+    updateModeBadge = '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:pointer" '
+      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경">커밋 추적</span>';
+  } else {
+    updateModeBadge = '<span class="badge" style="background:rgba(3,169,244,.1);color:var(--primary);cursor:pointer" '
       + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'commit\')" title="커밋 추적 모드로 변경">릴리즈</span>';
+  }
 
   const isSingleBranch = repos.filter(repo => repo.component_id === r.component_id).length <= 1;
   const toggleDisabled = busy || isSingleBranch;
