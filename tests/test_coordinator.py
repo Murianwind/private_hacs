@@ -262,6 +262,15 @@ def _make_coord(hass, repos, github, store=None):
                     return True
         return False
     coord._check_installed = _patched_check
+
+    # github.has_any_release_or_tag를 명시적으로 설정하지 않은 테스트에서는
+    # AsyncMock()이 자동 생성한 mock 객체가 항상 truthy라서 "릴리즈가
+    # 있다"로 잘못 평가될 수 있다. 안전한 기본값(False)을 깔아둔다.
+    # _make_coord 호출은 보통 github 설정 코드 다음에 오므로, 테스트가
+    # has_any_release_or_tag를 직접 설정하고 싶으면 _make_coord 호출
+    # 이후에 다시 할당하면 된다(같은 객체 참조이므로 정상 동작).
+    github.has_any_release_or_tag = AsyncMock(return_value=False)
+
     return coord
 
 
@@ -687,3 +696,116 @@ class TestMultiBranch:
 
         assert result[make_entry_key("private_hacs", "main")]["has_update"] is True
         assert result[make_entry_key("private_hacs", "test")]["has_update"] is False
+
+
+class TestHasReleaseOrTagCache:
+
+    @pytest.mark.asyncio
+    async def test_given_commit_mode_no_cache__when_polled__then_checks_and_caches_when_found(self, hass):
+        """
+        Given: commit 모드, store에 has_release_or_tag 캐시 없음, 실제로 릴리즈 존재
+        When:  _async_update_data 실행
+        Then:  has_any_release_or_tag 호출됨, latest에 has_release_or_tag=True 포함,
+               store에도 캐시 저장됨 (다음 폴링부터 재확인 불필요)
+        """
+        store = make_store({("private_hacs", "main"): {"installed_version": "2.0.0"}})
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest())
+        github.has_any_release_or_tag = AsyncMock(return_value=True)
+        repos = [make_repo_item(update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("private_hacs", "main")
+
+        assert result[key]["latest"]["has_release_or_tag"] is True
+        github.has_any_release_or_tag.assert_called_once()
+        store.async_set_branch.assert_any_call(
+            "private_hacs", "main", {"has_release_or_tag": True}
+        )
+
+    @pytest.mark.asyncio
+    async def test_given_commit_mode_cached_true__when_polled_again__then_not_rechecked(self, hass):
+        """
+        Given: commit 모드, store에 has_release_or_tag=True 캐시 이미 존재
+        When:  _async_update_data 실행
+        Then:  has_any_release_or_tag가 호출되지 않음 (캐시 재사용, API 절약)
+        """
+        store = make_store({
+            ("private_hacs", "main"): {
+                "installed_version": "2.0.0", "has_release_or_tag": True,
+            }
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest())
+        github.has_any_release_or_tag = AsyncMock(return_value=True)
+        repos = [make_repo_item(update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("private_hacs", "main")
+
+        assert result[key]["latest"]["has_release_or_tag"] is True
+        github.has_any_release_or_tag.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_given_commit_mode_no_release_exists__when_polled__then_flag_false_and_rechecked_next_time(self, hass):
+        """
+        Given: commit 모드, 캐시 없음, 실제로도 릴리즈/태그 없음
+        When:  _async_update_data 실행
+        Then:  has_release_or_tag=False, store에 캐시 저장하지 않음
+               (다음 폴링에서 릴리즈가 생겼을 수 있으니 다시 확인할 여지를 남김)
+        """
+        store = make_store({("private_hacs", "main"): {"installed_version": "2.0.0"}})
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest())
+        github.has_any_release_or_tag = AsyncMock(return_value=False)
+        repos = [make_repo_item(update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("private_hacs", "main")
+
+        assert result[key]["latest"]["has_release_or_tag"] is False
+        # False일 때는 store에 캐시를 쓰지 않아야 다음 폴링에서 재확인 가능
+        for call in store.async_set_branch.call_args_list:
+            assert call.args[2] != {"has_release_or_tag": False}
+
+    @pytest.mark.asyncio
+    async def test_given_release_mode_release_found__when_polled__then_cache_prefilled(self, hass):
+        """
+        Given: release 모드, 실제로 릴리즈가 발견됨
+        When:  _async_update_data 실행
+        Then:  has_release_or_tag 캐시가 store에 미리 채워짐
+               (나중에 commit 모드로 전환해도 재확인이 필요 없도록)
+        """
+        store = make_store({("private_hacs", "main"): {"installed_version": "2.0.0"}})
+        github = AsyncMock()
+        github.resolve_latest = AsyncMock(return_value=_release_latest("v2.1.0"))
+        repos = [make_repo_item(update_mode="release")]
+        coord = _make_coord(hass, repos, github, store)
+
+        await coord._async_update_data()
+
+        store.async_set_branch.assert_any_call(
+            "private_hacs", "main", {"has_release_or_tag": True}
+        )
+
+    @pytest.mark.asyncio
+    async def test_given_has_any_release_or_tag_raises__when_polled__then_treated_as_false(self, hass):
+        """
+        Given: has_any_release_or_tag 호출 중 예외 발생(네트워크 오류 등)
+        When:  _async_update_data 실행
+        Then:  has_release_or_tag=False로 안전하게 처리, 전체 폴링은 계속 진행
+        """
+        store = make_store({("private_hacs", "main"): {"installed_version": "2.0.0"}})
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest())
+        github.has_any_release_or_tag = AsyncMock(side_effect=Exception("네트워크 오류"))
+        repos = [make_repo_item(update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("private_hacs", "main")
+
+        assert result[key]["latest"]["has_release_or_tag"] is False
