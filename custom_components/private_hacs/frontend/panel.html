@@ -692,6 +692,7 @@ async function fetchRepos() {
         name: cleanName, repo_url: repoUrl,
         installed_version: installed, latest_version: latest,
         installed_commit_sha: a.installed_commit_sha || null,
+        installed_manifest_version: a.installed_manifest_version || null,
         remote_commit_sha: a.remote_commit_sha || null,
         remote_manifest_version: a.remote_manifest_version || null,
         release_url: a.release_url || null,
@@ -804,9 +805,23 @@ function branchRowHTML(r) {
   const sourceBadge = r.version_source === 'manifest'
     ? '<span class="badge badge-manifest">📄 자동 감지</span>' : '';
 
-  const shaStr = r.installed_commit_sha ? '/' + String(r.installed_commit_sha).slice(0, 7) : '';
-  const installedBadge = r.installed_version
-    ? '<span class="badge badge-version">설치: ' + esc(r.installed_version) + esc(shaStr) + '</span>' : '';
+  // 설치 배지: installed_version은 commit 모드일 때 SHA 7자리를 우선
+  // 반환하므로, manifest 버전이 있으면 "버전/SHA" 형태로 합쳐서 표시한다.
+  // (latestBadge와 동일한 패턴 — 1순위 SHA, 표시는 버전과 함께)
+  let installedBadge = '';
+  if (r.installed_version) {
+    const installedShaShort = r.installed_commit_sha ? String(r.installed_commit_sha).slice(0, 7) : '';
+    const isInstalledVersionTheSha = installedShaShort && r.installed_version === installedShaShort;
+    let installedDisplay;
+    if (isInstalledVersionTheSha && r.installed_manifest_version) {
+      installedDisplay = esc(r.installed_manifest_version) + esc('/' + installedShaShort);
+    } else if (isInstalledVersionTheSha) {
+      installedDisplay = esc(r.installed_version);
+    } else {
+      installedDisplay = esc(r.installed_version) + (installedShaShort ? esc('/' + installedShaShort) : '');
+    }
+    installedBadge = '<span class="badge badge-version">설치: ' + installedDisplay + '</span>';
+  }
 
   // 최신 배지: latest_version은 SHA 1순위(없으면 manifest 버전)로 채워져 있음.
   // 화면에는 "버전/SHA" 형태로 둘 다 보여준다 — manifest 버전이 있고
