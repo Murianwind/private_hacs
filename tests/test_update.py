@@ -140,6 +140,67 @@ class TestVersionProperties:
 
         assert entity.installed_version is None
 
+    def test_given_commit_mode_with_sha__when_read__then_installed_version_shows_sha(self, hass):
+        """
+        Given: 커밋 추적 브랜치, installed_commit_sha 있음
+        When:  installed_version 읽기
+        Then:  SHA 7자리 반환 (manifest 버전이 아니라).
+               알림 등에서 "0.1.0 → fd0410e"처럼 서로 다른 종류의 값이
+               비교되지 않고, "abc1234 → fd0410e"처럼 SHA끼리 비교되도록 함.
+        """
+        repo_cfg = make_repo_item(branch="test", update_mode="commit")
+        entry_key = make_entry_key("private_hacs", "test")
+        sha = "abc123abc123"
+        entity = _make_entity(hass, repo_cfg, {entry_key: _repo_data_commit(sha=sha)})
+
+        assert entity.installed_version == sha[:7]
+        assert entity.installed_version != "2.0.0"  # manifest 버전이 아님
+
+    def test_given_commit_mode_without_sha__when_read__then_falls_back_to_manifest_version(self, hass):
+        """
+        Given: 커밋 추적 브랜치, installed_commit_sha 없음(예: 검증 전 상태)
+        When:  installed_version 읽기
+        Then:  manifest 버전으로 fallback
+        """
+        repo_cfg = make_repo_item(branch="test", update_mode="commit")
+        entry_key = make_entry_key("private_hacs", "test")
+        data = _repo_data_commit(sha="irrelevant")
+        data["installed_commit_sha"] = None
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        assert entity.installed_version == "2.0.0"
+
+    def test_given_release_mode_with_sha__when_read__then_manifest_version_wins(self, hass):
+        """
+        Given: 릴리즈 모드(commit 아님), installed_commit_sha가 우연히 남아있는 경우
+        When:  installed_version 읽기
+        Then:  SHA 무시하고 manifest 버전(릴리즈 태그) 반환
+               (SHA 우선 규칙은 commit 모드에만 적용됨)
+        """
+        repo_cfg = make_repo_item()
+        entry_key = make_entry_key("private_hacs", "main")
+        data = _repo_data_release("v2.0.0", False)
+        data["installed_commit_sha"] = "leftover_sha_1234567"
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        assert entity.installed_version == "v2.0.0"
+
+    def test_given_commit_mode_inactive_branch__when_latest_read__then_shows_installed_sha(self, hass):
+        """
+        Given: 커밋 추적 브랜치, 비활성 상태
+        When:  latest_version 읽기
+        Then:  installed_version과 동일한 값(SHA 7자리) 반환 — 비활성 브랜치는
+               업데이트 알림을 억제하므로 latest도 installed와 같아야 함
+        """
+        repo_cfg = make_repo_item(branch="test", active=False, update_mode="commit")
+        entry_key = make_entry_key("private_hacs", "test")
+        sha = "abc123abc123"
+        data = _repo_data_commit(sha=sha, new_sha="newsha7654321")
+        data["active"] = False
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        assert entity.latest_version == entity.installed_version == sha[:7]
+
     def test_given_commit_mode_update_with_sha_and_manifest_version__when_read__then_sha_wins(self, hass):
         """
         Given: 커밋 추적 브랜치, 업데이트 있음, SHA와 manifest 버전 둘 다 존재
@@ -292,6 +353,26 @@ class TestExtraStateAttributes:
         assert attrs["remote_commit_sha"] == "newsha7654321"
         assert attrs["update_mode"] == "commit"
         assert attrs["has_icon"] is True
+
+    def test_given_commit_branch__when_read__then_installed_manifest_version_exposed(self, hass):
+        """
+        Given: 커밋 추적 브랜치, installed_version(manifest 버전) "0.1.0"
+        When:  extra_state_attributes 읽기
+        Then:  installed_manifest_version으로 원본 manifest 버전이 노출됨
+               (installed_version 프로퍼티 자체는 SHA를 반환하므로,
+                패널 UI가 "버전/SHA" 형태로 함께 보여주려면 이 별도
+                attribute가 필요함)
+        """
+        repo_cfg = make_repo_item(branch="test", update_mode="commit")
+        entry_key = make_entry_key("private_hacs", "test")
+        data = _repo_data_commit("abc123abc123")
+        data["installed_version"] = "0.1.0"
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        attrs = entity.extra_state_attributes
+        assert attrs["installed_manifest_version"] == "0.1.0"
+        assert entity.installed_version == "abc123a"  # SHA 7자리(프로퍼티 자체는 SHA 우선)
+
 
     def test_given_no_coordinator_data__when_read__then_defaults_returned(self, hass):
         """
