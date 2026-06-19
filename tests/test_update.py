@@ -578,3 +578,65 @@ class TestAsyncInstall:
             mock_install.assert_called_once_with(
                 entity.hass, "private_hacs", "main", ref="v1.0.0"
             )
+
+
+# ══════════════════════════════════════════════════════════════════════
+# entity_picture — 브랜드 아이콘 URL
+# ══════════════════════════════════════════════════════════════════════
+
+class TestEntityPicture:
+
+    def test_given_has_icon_true__when_read__then_returns_brand_icon_url(self, hass):
+        """
+        Given: has_icon=True (brand/icon.png 존재 확인됨)
+        When:  entity_picture 읽기
+        Then:  /private_hacs_icons/{component_id}/brand/icon.png URL 반환
+               (panel.py가 등록한 정적 경로와 동일 — HA 표준 엔티티 카드,
+                Lovelace 업데이트 카드, 알림 등에서도 브랜드 아이콘이 보이도록)
+        """
+        repo_cfg = make_repo_item()
+        entry_key = make_entry_key("private_hacs", "main")
+        data = _repo_data_release()
+        data["has_icon"] = True
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        assert entity.entity_picture == "/private_hacs_icons/private_hacs/brand/icon.png"
+
+    def test_given_has_icon_false__when_read__then_returns_none(self, hass):
+        """
+        Given: has_icon=False (brand/icon.png 없음)
+        When:  entity_picture 읽기
+        Then:  None 반환 (HA 기본 업데이트 아이콘 사용)
+        """
+        repo_cfg = make_repo_item()
+        entry_key = make_entry_key("private_hacs", "main")
+        data = _repo_data_release()
+        data["has_icon"] = False
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        assert entity.entity_picture is None
+
+    def test_given_no_coordinator_data__when_read__then_returns_none(self, hass):
+        """
+        Given: coordinator.data 없음 (초기 상태, has_icon 정보 없음)
+        When:  entity_picture 읽기
+        Then:  None 반환 (에러 없이 안전하게 처리)
+        """
+        repo_cfg = make_repo_item()
+        entity = _make_entity(hass, repo_cfg, None)
+
+        assert entity.entity_picture is None
+
+    def test_given_different_component_id__when_read__then_url_uses_correct_id(self, hass):
+        """
+        Given: component_id="my_lg", has_icon=True
+        When:  entity_picture 읽기
+        Then:  URL에 해당 component_id가 정확히 반영됨
+        """
+        repo_cfg = make_repo_item(component_id="my_lg")
+        entry_key = make_entry_key("my_lg", "main")
+        data = _repo_data_release()
+        data["has_icon"] = True
+        entity = _make_entity(hass, repo_cfg, {entry_key: data})
+
+        assert entity.entity_picture == "/private_hacs_icons/my_lg/brand/icon.png"

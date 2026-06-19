@@ -130,6 +130,22 @@ class PrivateHacsUpdateEntity(CoordinatorEntity[PrivateHacsCoordinator], UpdateE
         return True
 
     @property
+    def entity_picture(self) -> str | None:
+        """
+        저장소의 custom_components/{component_id}/brand/icon.png가
+        존재하면 그 아이콘을 표시한다.
+
+        이 URL은 panel.py가 등록한 정적 경로(/private_hacs_icons)를
+        그대로 사용하므로, 패널 UI뿐 아니라 HA 표준 엔티티 카드,
+        Lovelace의 업데이트 카드, 알림 등에서도 동일한 브랜드 아이콘이
+        보이게 된다. 아이콘 파일이 없으면 None을 반환해 HA 기본
+        업데이트 아이콘이 사용되도록 한다.
+        """
+        if self._repo_data.get("has_icon"):
+            return f"/private_hacs_icons/{self._component_id}/brand/icon.png"
+        return None
+
+    @property
     def installed_version(self) -> str | None:
         # 커밋 추적(branch 타입) 브랜치는 설치 버전도 SHA 7자리를 우선 표시.
         # latest_version과 동일한 "1순위 SHA, 2순위 manifest 버전" 원칙을
