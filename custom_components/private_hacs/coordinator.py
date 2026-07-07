@@ -193,6 +193,48 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                     component_id, branch,
                 )
 
+            # 방법 A: SHA가 있는데 has_update=True로 나온 경우에도 verify 재시도.
+            # HACS 등 외부 도구가 Private HACS store를 우회해 파일을 직접
+            # 교체했을 수 있다 — store에 기록된 installed_commit_sha는 이전
+            # 버전 그대로지만, 실제 디스크 파일은 이미 최신 HEAD와 동일할 수 있다.
+            # 이 경우 verify_installed_sha가 True를 반환하면:
+            #   - store의 installed_commit_sha를 최신 SHA로 갱신
+            #   - has_update를 False로 전환 (실제로는 이미 최신 상태이므로)
+            # 검증 실패 시에는 has_update=True를 유지(정말로 업데이트가 필요한 상황).
+            if (
+                has_update
+                and not sha_unknown_but_installed
+                and installed_commit_sha          # 기존 SHA가 있고
+                and latest
+                and latest.get("type") == "branch"
+                and latest.get("commit_sha")
+                and latest["commit_sha"] != installed_commit_sha
+            ):
+                head_sha = latest["commit_sha"]
+                try:
+                    verified = await self.github.verify_installed_sha(
+                        self.hass, repo, component_id, head_sha
+                    )
+                except Exception as err:
+                    _LOGGER.debug(
+                        "verify_installed_sha (external-update check) failed for %s@%s: %s",
+                        component_id, branch, err
+                    )
+                    verified = False
+
+                if verified:
+                    # 파일이 실제로 HEAD와 일치 — 외부 도구가 이미 업데이트한 것
+                    installed_commit_sha = head_sha
+                    await self.store.async_set_branch(
+                        component_id, branch, {"installed_commit_sha": installed_commit_sha}
+                    )
+                    has_update = False
+                    _LOGGER.debug(
+                        "External update detected for %s@%s: files already match HEAD %s "
+                        "— store updated, has_update cleared",
+                        component_id, branch, installed_commit_sha[:7],
+                    )
+
             # latest가 branch 타입인데 update_mode가 release인 경우
             # → 릴리즈/태그가 없는 저장소 확인 — config entry에 commit으로 영구 저장
             if (
