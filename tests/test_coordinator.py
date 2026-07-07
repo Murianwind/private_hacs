@@ -270,6 +270,8 @@ def _make_coord(hass, repos, github, store=None):
     # 명시적으로 할당된 적이 없을 때만 안전한 기본값(False)을 깐다.
     if "has_any_release_or_tag" not in vars(github):
         github.has_any_release_or_tag = AsyncMock(return_value=False)
+    if "verify_installed_sha" not in vars(github):
+        github.verify_installed_sha = AsyncMock(return_value=False)
 
     return coord
 
@@ -376,6 +378,7 @@ class TestAsyncUpdateDataCommit:
         })
         github = AsyncMock()
         github.resolve_branch_latest = AsyncMock(return_value=_commit_latest("newsha999", "test"))
+        github.verify_installed_sha = AsyncMock(return_value=False)
         repos = [make_repo_item(branch="test", update_mode="commit")]
         coord = _make_coord(hass, repos, github, store)
 
@@ -660,6 +663,7 @@ class TestRefresh:
         })
         github = AsyncMock()
         github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(sha_old))
+        github.verify_installed_sha = AsyncMock(return_value=False)
         repos = [make_repo_item(update_mode="commit")]
         coord = _make_coord(hass, repos, github, store)
 
@@ -809,3 +813,120 @@ class TestHasReleaseOrTagCache:
         key = make_entry_key("private_hacs", "main")
 
         assert result[key]["latest"]["has_release_or_tag"] is False
+
+
+class TestExternalUpdateDetection:
+    """
+    HACS 등 외부 도구가 Private HACS store를 우회해 파일을 직접 교체한 경우,
+    verify_installed_sha로 재검증해 has_update를 자동으로 해소하는 동작 검증.
+    """
+
+    @pytest.mark.asyncio
+    async def test_given_external_update_files_match_head__when_polled__then_sha_updated_and_no_update(self, hass):
+        """
+        Given: store에 이전 SHA(ecada30) 기록, 디스크 파일은 이미 최신 HEAD(1617461)와 동일
+               (예: HACS가 v1.9.5 릴리즈를 설치해서 파일이 교체된 상황)
+        When:  _async_update_data 실행
+        Then:  verify_installed_sha가 True를 반환 → store SHA가 새 HEAD로 갱신,
+               has_update=False (실제로 이미 최신 상태이므로 업데이트 불필요)
+        """
+        old_sha = "ecada30ecada30"
+        head_sha = "1617461161746"
+        store = make_store({
+            ("kma_weather", "main"): {
+                "installed_version": "1.9.4",
+                "installed_commit_sha": old_sha,
+            }
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(head_sha))
+        github.verify_installed_sha = AsyncMock(return_value=True)
+        repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("kma_weather", "main")
+
+        assert result[key]["has_update"] is False
+        assert result[key]["installed_commit_sha"] == head_sha
+        github.verify_installed_sha.assert_called_once()
+        store.async_set_branch.assert_any_call(
+            "kma_weather", "main", {"installed_commit_sha": head_sha}
+        )
+
+    @pytest.mark.asyncio
+    async def test_given_files_differ_from_head__when_polled__then_has_update_remains(self, hass):
+        """
+        Given: store에 이전 SHA, 디스크 파일도 실제로 HEAD와 다름
+               (진짜로 업데이트가 필요한 상황)
+        When:  _async_update_data 실행
+        Then:  verify_installed_sha가 False → has_update=True 유지
+        """
+        old_sha = "ecada30ecada30"
+        head_sha = "1617461161746"
+        store = make_store({
+            ("kma_weather", "main"): {
+                "installed_version": "1.9.4",
+                "installed_commit_sha": old_sha,
+            }
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(head_sha))
+        github.verify_installed_sha = AsyncMock(return_value=False)
+        repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("kma_weather", "main")
+
+        assert result[key]["has_update"] is True
+
+    @pytest.mark.asyncio
+    async def test_given_verify_raises__when_polled__then_has_update_remains(self, hass):
+        """
+        Given: verify_installed_sha 호출 중 예외 발생 (네트워크 오류 등)
+        When:  _async_update_data 실행
+        Then:  has_update=True 유지, 전체 폴링은 계속 진행
+        """
+        old_sha = "ecada30ecada30"
+        head_sha = "1617461161746"
+        store = make_store({
+            ("kma_weather", "main"): {
+                "installed_version": "1.9.4",
+                "installed_commit_sha": old_sha,
+            }
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(head_sha))
+        github.verify_installed_sha = AsyncMock(side_effect=Exception("네트워크 오류"))
+        repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("kma_weather", "main")
+
+        assert result[key]["has_update"] is True
+
+    @pytest.mark.asyncio
+    async def test_given_sha_already_matches__when_polled__then_verify_not_called(self, hass):
+        """
+        Given: store SHA와 remote SHA가 이미 동일 (정상 상태)
+        When:  _async_update_data 실행
+        Then:  verify_installed_sha 미호출 (불필요한 API 호출 없음)
+        """
+        sha = "abc123abc123"
+        store = make_store({
+            ("kma_weather", "main"): {
+                "installed_version": "1.9.5",
+                "installed_commit_sha": sha,
+            }
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(sha))
+        github.verify_installed_sha = AsyncMock(return_value=True)
+        repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        await coord._async_update_data()
+
+        github.verify_installed_sha.assert_not_called()
