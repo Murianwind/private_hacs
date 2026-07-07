@@ -270,6 +270,8 @@ def _make_coord(hass, repos, github, store=None):
     # 명시적으로 할당된 적이 없을 때만 안전한 기본값(False)을 깐다.
     if "has_any_release_or_tag" not in vars(github):
         github.has_any_release_or_tag = AsyncMock(return_value=False)
+    if "verify_installed_sha" not in vars(github):
+        github.verify_installed_sha = AsyncMock(return_value=False)
 
     return coord
 
@@ -376,6 +378,7 @@ class TestAsyncUpdateDataCommit:
         })
         github = AsyncMock()
         github.resolve_branch_latest = AsyncMock(return_value=_commit_latest("newsha999", "test"))
+        github.verify_installed_sha = AsyncMock(return_value=False)
         repos = [make_repo_item(branch="test", update_mode="commit")]
         coord = _make_coord(hass, repos, github, store)
 
@@ -660,6 +663,7 @@ class TestRefresh:
         })
         github = AsyncMock()
         github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(sha_old))
+        github.verify_installed_sha = AsyncMock(return_value=False)
         repos = [make_repo_item(update_mode="commit")]
         coord = _make_coord(hass, repos, github, store)
 
