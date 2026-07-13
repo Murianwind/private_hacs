@@ -822,16 +822,19 @@ class TestExternalUpdateDetection:
     """
 
     @pytest.mark.asyncio
-    async def test_given_external_update_files_match_head__when_polled__then_sha_updated_and_no_update(self, hass):
+    async def test_given_external_update_files_match_head__when_polled__then_sha_and_version_updated(self, hass):
         """
-        Given: store에 이전 SHA(ecada30) 기록, 디스크 파일은 이미 최신 HEAD(1617461)와 동일
+        Given: store에 이전 SHA(ecada30) + 이전 버전(1.9.4) 기록,
+               디스크 파일은 이미 최신 HEAD(1617461, manifest 버전 1.9.5)와 동일
                (예: HACS가 v1.9.5 릴리즈를 설치해서 파일이 교체된 상황)
         When:  _async_update_data 실행
-        Then:  verify_installed_sha가 True를 반환 → store SHA가 새 HEAD로 갱신,
+        Then:  verify_installed_sha가 True를 반환 → store SHA와 버전 모두 갱신,
                has_update=False (실제로 이미 최신 상태이므로 업데이트 불필요)
         """
         old_sha = "ecada30ecada30"
         head_sha = "1617461161746"
+        latest = _commit_latest(head_sha)
+        latest["remote_manifest_version"] = "1.9.5"
         store = make_store({
             ("kma_weather", "main"): {
                 "installed_version": "1.9.4",
@@ -839,7 +842,7 @@ class TestExternalUpdateDetection:
             }
         })
         github = AsyncMock()
-        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(head_sha))
+        github.resolve_branch_latest = AsyncMock(return_value=latest)
         github.verify_installed_sha = AsyncMock(return_value=True)
         repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
         coord = _make_coord(hass, repos, github, store)
@@ -849,7 +852,42 @@ class TestExternalUpdateDetection:
 
         assert result[key]["has_update"] is False
         assert result[key]["installed_commit_sha"] == head_sha
+        assert result[key]["installed_version"] == "1.9.5"
         github.verify_installed_sha.assert_called_once()
+        store.async_set_branch.assert_any_call(
+            "kma_weather", "main",
+            {"installed_commit_sha": head_sha, "installed_version": "1.9.5"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_given_external_update_no_manifest_version__when_polled__then_only_sha_updated(self, hass):
+        """
+        Given: 디스크 파일이 HEAD와 일치하지만, 원격 manifest에 버전 문자열이 없음
+        When:  _async_update_data 실행
+        Then:  installed_commit_sha만 갱신, installed_version은 그대로 유지
+        """
+        old_sha = "ecada30ecada30"
+        head_sha = "1617461161746"
+        latest = _commit_latest(head_sha)
+        latest["remote_manifest_version"] = None
+        store = make_store({
+            ("kma_weather", "main"): {
+                "installed_version": "1.9.4",
+                "installed_commit_sha": old_sha,
+            }
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=latest)
+        github.verify_installed_sha = AsyncMock(return_value=True)
+        repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("kma_weather", "main")
+
+        assert result[key]["has_update"] is False
+        assert result[key]["installed_commit_sha"] == head_sha
+        assert result[key]["installed_version"] == "1.9.4"  # 버전 유지
         store.async_set_branch.assert_any_call(
             "kma_weather", "main", {"installed_commit_sha": head_sha}
         )
