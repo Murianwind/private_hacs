@@ -10,7 +10,6 @@ custom_components/private_hacs/ 전체가 git 저장소 내용으로 교체되�
 from __future__ import annotations
 
 import os
-import tempfile
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
