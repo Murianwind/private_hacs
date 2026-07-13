@@ -11,7 +11,7 @@ if _ROOT not in sys.path:
 
 # custom_components.private_hacs.* 를 짧은 이름으로도 접근 가능하게 alias
 import importlib
-for _mod in ["const", "helpers", "store", "github", "coordinator", "services", "update"]:
+for _mod in ["const", "helpers", "store", "github", "coordinator", "services", "update", "panel"]:
     try:
         full = f"custom_components.private_hacs.{_mod}"
         mod = importlib.import_module(full)
