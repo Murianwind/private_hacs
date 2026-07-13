@@ -1,196 +1,1405 @@
-"""Custom panel registration for Private HACS."""
-from __future__ import annotations
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Private HACS</title>
+<script src="/private_hacs_panel/js/marked.min.js"></script>
+<style>
+  :root {
+    --primary: var(--primary-color, #03a9f4);
+    --primary-dark: var(--dark-primary-color, #0288d1);
+    --success: var(--success-color, #4caf50);
+    --warning: var(--warning-color, #ff9800);
+    --danger: var(--error-color, #f44336);
+    --surface:  var(--primary-background-color, #1c1c1e);
+    --surface2: var(--secondary-background-color, #2c2c2e);
+    --surface3: var(--secondary-background-color, var(--card-background-color, #3a3a3c));
+    --text:     var(--primary-text-color, #e5e5ea);
+    --text-secondary: var(--secondary-text-color, #98989f);
+    --border:   var(--divider-color, rgba(0,0,0,.12));
+    --radius: 12px;
+    --radius-sm: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--paper-font-body1_-_font-family,
+                 -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                 Roboto, 'Noto Sans KR', sans-serif);
+    background: var(--surface);
+    color: var(--text);
+    min-height: 100vh;
+    font-size: 15px;
+    line-height: 1.5;
+  }
 
-import logging
-import os
-import time
+  /* ── Header ── */
+  .header {
+    background: var(--app-header-background-color, var(--primary-color, #03a9f4));
+    color: var(--app-header-text-color, #fff);
+    padding: 0 16px;
+    height: 56px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 4px rgba(0,0,0,.2);
+  }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .header-icon { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .header h1 { font-size: 18px; font-weight: 600; color: var(--app-header-text-color, #fff); }
+  .header-actions { display: flex; gap: 8px; }
 
-from homeassistant.components.frontend import async_remove_panel as frontend_remove_panel
-from homeassistant.components.http import StaticPathConfig
-from homeassistant.components.panel_custom import async_register_panel
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border: none; border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 500;
+    cursor: pointer; transition: all .15s; font-family: inherit;
+  }
+  .btn:active { transform: scale(.97); }
 
-from .const import PANEL_ICON, PANEL_TITLE, PANEL_URL
+  /* 헤더 버튼 — 라이트/다크 모두 가시
+     헤더 배경색과 무관하게 어두운 반투명으로 깊이감을 줌 */
+  .header .btn {
+    background: rgba(0,0,0,.18);
+    color: var(--app-header-text-color, #fff);
+    border: 1px solid rgba(0,0,0,.22);
+    backdrop-filter: brightness(1.15);
+  }
+  .header .btn:hover { background: rgba(0,0,0,.30); }
+  .header .btn-restart {
+    background: rgba(244,67,54,.28);
+    border-color: rgba(244,67,54,.45);
+  }
+  .header .btn-restart:hover { background: rgba(244,67,54,.42); }
 
-_LOGGER = logging.getLogger(__name__)
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
+  .btn-ghost:hover { background: var(--surface3); color: var(--text); }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover { filter: brightness(1.1); }
+  .btn-warning { background: var(--warning); color: #1a1200; font-weight: 600; }
+  .btn-warning:hover { filter: brightness(1.1); }
+  .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-danger:hover { background: #c62828; color: #fff; border-color: #c62828; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
 
-_REGISTERED_HASS_IDS: set[int] = set()
+  /* ── Main ── */
+  .main { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
 
-_PANEL_JS = r"""
-if (!customElements.get('private-hacs-panel')) {
-  customElements.define('private-hacs-panel', class extends HTMLElement {
-    connectedCallback() {
-      if (this._initialized) return;
-      this._initialized = true;
-      this.style.cssText = 'display:block;width:100%;height:100%;overflow:auto;';
-      this._loadHTML();
-    }
-    set hass(hass) {
-      this._hass = hass;
-      if (!this._tokenSent && hass && hass.auth && hass.auth.data && hass.auth.data.access_token) {
-        this._tokenSent = true;
-        if (this._resolveToken) this._resolveToken(hass.auth.data.access_token);
-      }
-    }
-    async _loadHTML() {
-      try {
-        const resp = await fetch('/private_hacs_panel/panel.html?t=' + Date.now());
-        if (!resp.ok) throw new Error('panel.html fetch failed');
-        const html = await resp.text();
-        const self = this;
-        window.__privateHacsGetToken = function() {
-          return new Promise(function(resolve, reject) {
-            if (self._hass && self._hass.auth && self._hass.auth.data && self._hass.auth.data.access_token) {
-              resolve(self._hass.auth.data.access_token);
-            } else {
-              self._resolveToken = resolve;
-              setTimeout(() => reject(new Error('timeout')), 5000);
-            }
-          });
-        };
-        const styleMatch = html.match(/<style>([\s\S]*?)<\/style>/);
-        if (styleMatch) {
-          const style = document.createElement('style');
-          style.textContent = styleMatch[1];
-          this.appendChild(style);
-        }
-        const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/);
-        if (bodyMatch) {
-          const div = document.createElement('div');
-          div.innerHTML = bodyMatch[1].replace(/<script[\s\S]*?<\/script>/gi, '');
-          this.appendChild(div);
-        }
-        window.__privateHacsPanel = this;
-        if (!window.__privateHacsScriptLoaded) {
-          window.__privateHacsScriptLoaded = true;
-          const scriptRe = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
-          let m;
-          while ((m = scriptRe.exec(html)) !== null) {
-            const attrs = m[1];
-            const content = m[2];
-            const script = document.createElement('script');
-            const srcMatch = attrs.match(/src=["']([^"']+)["']/);
-            if (srcMatch) {
-              script.src = srcMatch[1];
-            } else {
-              script.textContent = content;
-            }
-            document.head.appendChild(script);
-          }
-        } else {
-          setTimeout(() => {
-            if (typeof connectWS === 'function' && typeof loadData === 'function') {
-              connectWS().then(() => loadData());
-            }
-          }, 150);
-        }
-      } catch(err) {
-        this.innerHTML = '<p style="color:red;padding:24px">로드 실패: ' + err.message + '</p>';
-      }
-    }
+  /* ── Stats ── */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; max-width: 480px; }
+  .stat-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 8px; text-align: center; }
+  .stat-number { font-size: 32px; font-weight: 700; color: var(--primary); line-height: 1.1; }
+  .stat-label { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+
+  /* ── Filter bar ── */
+  .filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-bar input {
+    flex: 1; min-width: 140px;
+    background: var(--surface2); border: 1.5px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 14px;
+    color: var(--text); font-size: 14px; font-family: inherit;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+  }
+  .filter-bar input::placeholder { color: var(--text-secondary); }
+  .filter-bar input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(3,169,244,.15); }
+  .filter-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tab-btn {
+    padding: 8px 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface2); color: var(--text);
+    font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; font-family: inherit;
+  }
+  .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
+
+  /* ── Repo group ── */
+  .repo-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  @media (min-width: 900px) {
+    .repo-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (min-width: 1300px) {
+    .repo-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+  .repo-group {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .repo-group:hover { border-color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,.1); }
+  .repo-group.has-update { border-left: 3px solid var(--warning); }
+
+  .group-header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .group-icon {
+    width: 40px; height: 40px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--primary), #7c4dff);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px; cursor: pointer; overflow: hidden;
+  }
+  .group-icon img { width: 28px; height: 28px; object-fit: contain; }
+  .group-title {
+    font-size: 15px; font-weight: 700;
+    color: var(--text); cursor: pointer; transition: color .15s;
+  }
+  .group-title:hover { color: var(--primary); text-decoration: underline; }
+  .group-component-id {
+    font-size: 12px; color: var(--text-secondary);
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    margin-top: 1px;
+  }
+
+  /* ── 브랜치 행: 그리드로 토글/정보/버튼 정렬 ──
+     [토글] | [브랜치명 + 배지]
+            | [버튼들]
+  */
+  .branch-row {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    grid-template-rows: auto auto;
+    row-gap: 6px;
+    padding: 12px 16px 12px 14px;
+    border-bottom: 1px solid var(--border);
+    transition: background .15s;
+  }
+  .branch-row:last-child { border-bottom: none; }
+  .branch-row.inactive { opacity: .55; }
+
+  /* 토글: 1열, 두 행 모두 (세로 가운데 정렬) */
+  .toggle-wrap {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    display: flex;
+    align-items: center;
+    padding-top: 1px;
+  }
+
+  /* 브랜치명+배지: 2열 1행 */
+  .branch-label {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .branch-name {
+    font-size: 13px; font-weight: 600;
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    color: var(--primary);
+    background: rgba(3,169,244,.1);
+    padding: 2px 8px; border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  /* 버전/링크 배지: branch-label과 같은 행에 flex로 이어짐 */
+  .branch-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* 버튼: 2열 2행 */
+  .branch-actions {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
+
+  /* ── Toggle switch ── */
+  .toggle-label { font-size: 11px; color: var(--text-secondary); }
+  .toggle {
+    position: relative; width: 36px; height: 20px;
+    display: inline-block; flex-shrink: 0;
+  }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; inset: 0;
+    background: var(--surface3, #3a3a3c);
+    border: 1.5px solid var(--text-secondary, #98989f);
+    border-radius: 20px;
+    cursor: pointer; transition: background .2s, border-color .2s;
+  }
+  .toggle-slider::before {
+    content: ''; position: absolute;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--primary-text-color, #4a4a4a);
+    left: 2px; top: 2px;
+    transition: transform .2s, background .2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
+  /* 켜짐 상태: primary 색상에 의존하지 않고 명확한 진한 청록색 고정,
+     동그라미는 흰색 + 진한 테두리로 배경과 분리 */
+  .toggle input:checked + .toggle-slider {
+    background: #0b8043;
+    border-color: #0b8043;
+  }
+  .toggle input:checked + .toggle-slider::before {
+    transform: translateX(16px);
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.15);
+    box-shadow: 0 1px 3px rgba(0,0,0,.5);
+  }
+  .toggle input:disabled + .toggle-slider { opacity: .4; cursor: default; }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 2px 8px; border-radius: 20px;
+    font-size: 12px; font-weight: 500; font-family: inherit;
+    white-space: nowrap;
+  }
+  .badge-installed  { background: rgba(76,175,80,.15);  color: var(--success); }
+  .badge-update     { background: rgba(255,152,0,.15);   color: var(--warning); }
+  .badge-not-installed { background: var(--surface3); color: var(--text-secondary); }
+  .badge-version    { background: var(--surface3); color: var(--text-secondary); font-size: 12px; }
+  .badge-manifest   { background: rgba(124,77,255,.15); color: #9c7ae8; }
+  .release-link { font-size: 12px; font-weight: 500; color: var(--primary); text-decoration: none; white-space: nowrap; }
+  .release-link:hover { text-decoration: underline; }
+  .readme-link {
+    font-size: 11px; font-weight: 500;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    text-decoration: none;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .readme-link:hover {
+    color: var(--primary);
+    border-color: var(--primary);
+    background: rgba(3,169,244,.08);
+  }
+
+  /* ── Loading / empty ── */
+  .loading { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-secondary); }
+  .spinner {
+    width: 36px; height: 36px;
+    border: 3px solid var(--border); border-top-color: var(--primary);
+    border-radius: 50%; animation: spin .8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-secondary); font-size: 15px; line-height: 1.6; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  /* ── Toast ── */
+  .toast-container {
+    position: fixed; bottom: 24px; right: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+    z-index: 9999; pointer-events: none; max-width: calc(100vw - 32px);
+  }
+  .toast {
+    background: var(--secondary-background-color, var(--card-background-color, #2c2c2e));
+    border: 1px solid var(--divider-color, var(--border));
+    border-radius: var(--radius-sm);
+    padding: 12px 16px; font-size: 14px; font-family: inherit;
+    color: var(--primary-text-color, var(--text));
+    min-width: 240px; max-width: 360px; pointer-events: auto;
+    animation: slideIn .25s ease; display: flex; align-items: center; gap: 10px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.25);
+  }
+  .toast.success { border-left: 3px solid var(--success); }
+  .toast.error   { border-left: 3px solid var(--danger); }
+  .toast.info    { border-left: 3px solid var(--primary); }
+  .toast.warning { border-left: 3px solid var(--warning); }
+  @keyframes slideIn { from { transform: translateX(110%); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ── Modals ── */
+  .modal-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 500; align-items: center; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--card-background-color, var(--secondary-background-color, #fff));
+    border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px;
+    width: 92%; max-width: 480px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.25);
+    max-height: 90vh; display: flex; flex-direction: column;
+  }
+  #readmeModal .modal { max-width: 760px; width: 95%; height: 85vh; }
+  .modal h2 { font-size: 17px; font-weight: 600; color: var(--text); margin-bottom: 18px; flex-shrink: 0; }
+  .modal-field { margin-bottom: 14px; flex-shrink: 0; }
+  .modal-field label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 5px; font-weight: 500; }
+  .modal-field input {
+    width: 100%;
+    background: var(--primary-background-color, var(--secondary-background-color, #f5f5f5));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px;
+    color: var(--text);
+    font-size: 14px; font-family: inherit;
+  }
+  .modal-field input:focus { outline: none; border-color: var(--primary); }
+  .modal-field .hint { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: auto; flex-shrink: 0; padding-top: 16px; }
+
+  .repo-preview {
+    display: none;
+    background: var(--primary-background-color, #f5f5f5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; font-size: 13px;
+  }
+  .repo-preview.visible { display: block; }
+  .repo-preview-name { font-weight: 600; margin-bottom: 4px; color: var(--text); font-size: 14px; }
+  .repo-preview-desc { color: var(--text-secondary); }
+  .repo-preview-component { color: var(--primary); font-size: 13px; margin-top: 6px; }
+
+  .branch-select-list {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 200px; overflow-y: auto; margin-top: 6px;
+  }
+  .branch-select-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px;
+    background: var(--primary-background-color, #f5f5f5);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    cursor: pointer; transition: border-color .15s, background .15s;
+    font-size: 13px;
+  }
+  .branch-select-item:hover { border-color: var(--primary); background: var(--surface2); }
+  .branch-select-item.selected { border-color: var(--primary); box-shadow: inset 3px 0 0 var(--primary); }
+  .branch-select-item.already-registered { opacity: .45; cursor: not-allowed; }
+  .branch-select-item.already-registered:hover { border-color: var(--border); background: var(--surface); }
+  .branch-item-radio {
+    width: 14px; height: 14px; flex-shrink: 0;
+    border: 2px solid var(--border); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .branch-select-item.selected .branch-item-radio { border-color: var(--primary); }
+  .branch-select-item.selected .branch-item-radio::after {
+    content: ''; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--primary); display: block;
+  }
+  .branch-item-name {
+    font-family: 'SFMono-Regular', Consolas, monospace;
+    font-size: 13px; font-weight: 600; color: var(--primary); flex: 1;
+  }
+  .branch-item-tag {
+    font-size: 11px; padding: 1px 6px; border-radius: 10px;
+    background: rgba(76,175,80,.15); color: var(--success);
+  }
+  .branch-loading { text-align: center; padding: 16px 0; color: var(--text-secondary); font-size: 13px; }
+  .branch-loading .spinner { width: 20px; height: 20px; border-width: 2px; margin: 0 auto 8px; }
+
+  .release-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; max-height: 360px; }
+  .release-item {
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm); cursor: pointer; transition: border-color .15s, background .15s;
+    background: var(--surface2);
+  }
+  .release-item:hover { border-color: var(--primary); background: var(--surface3); }
+  .release-item.selected { border-color: var(--primary); background: var(--surface3); box-shadow: inset 3px 0 0 var(--primary); }
+  .release-item-radio { width: 16px; height: 16px; flex-shrink: 0; border: 2px solid var(--border); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .release-item.selected .release-item-radio { border-color: var(--primary); }
+  .release-item.selected .release-item-radio::after { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--primary); display: block; }
+  .release-item-info { flex: 1; min-width: 0; }
+  .release-item-name { font-size: 14px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .release-item-tag { font-size: 12px; color: var(--primary); font-family: monospace; margin-top: 1px; }
+  .release-item-date { font-size: 12px; color: var(--text-secondary); flex-shrink: 0; }
+  .release-item-badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: rgba(255,152,0,.15); color: var(--warning); flex-shrink: 0; }
+  .release-current-badge { font-size: 11px; padding: 2px 7px; border-radius: 10px; background: rgba(76,175,80,.15); color: var(--success); flex-shrink: 0; }
+
+  .readme-content { flex: 1; overflow-y: auto; background: #0d1117; border: 1px solid #30363d; border-radius: var(--radius-sm); padding: 24px; color: #c9d1d9; font-size: 14px; line-height: 1.6; }
+  .markdown-body h1, .markdown-body h2, .markdown-body h3 { border-bottom: 1px solid #30363d; padding-bottom: 8px; margin-top: 20px; margin-bottom: 12px; color: #f0f6fc; }
+  .markdown-body h1:first-child { margin-top: 0; }
+  .markdown-body a { color: #58a6ff; text-decoration: none; }
+  .markdown-body a:hover { text-decoration: underline; }
+  .markdown-body code { background: rgba(110,118,129,.4); padding: .2em .4em; border-radius: 4px; font-family: monospace; font-size: 85%; }
+  .markdown-body pre { background: #161b22; padding: 16px; border-radius: 8px; overflow-x: auto; margin-bottom: 16px; }
+  .markdown-body pre code { background: none; padding: 0; font-size: 100%; color: #e6edf3; }
+  .markdown-body img { max-width: 100%; border-radius: 6px; }
+  .markdown-body blockquote { border-left: 4px solid #30363d; margin: 0; padding-left: 16px; color: #8b949e; }
+  .markdown-body table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+  .markdown-body th, .markdown-body td { border: 1px solid #30363d; padding: 8px 12px; }
+  .markdown-body th { background: #161b22; color: #f0f6fc; }
+  .markdown-body tr:nth-child(2n) { background: #161b22; }
+  .markdown-body ul, .markdown-body ol { padding-left: 24px; margin-bottom: 12px; }
+  .markdown-body li { margin-bottom: 4px; }
+
+  .confirm-backdrop {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.6);
+    z-index: 600; align-items: center; justify-content: center;
+  }
+  .confirm-backdrop.open { display: flex; }
+  .confirm-box {
+    background: var(--card-background-color, var(--secondary-background-color, #fff));
+    border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px;
+    width: 90%; max-width: 360px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.25);
+  }
+  .confirm-box h3 { margin-bottom: 10px; font-size: 16px; color: var(--text); }
+  .confirm-box p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6; white-space: pre-line; }
+  .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ── 반응형 ── */
+  @media (max-width: 600px) {
+    .header-actions { gap: 4px; }
+    .header .btn { padding: 5px 9px; font-size: 12px; }
+    .stats { gap: 8px; }
+    .stat-number { font-size: 26px; }
+    .branch-row { padding: 10px 12px 10px 10px; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div class="header-icon">🔒</div>
+    <h1>Private HACS</h1>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-sm" onclick="refreshAll()" id="refreshBtn">🔄 새로고침</button>
+    <button class="btn btn-sm btn-restart" onclick="confirmRestart()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M18.36 6.64a9 9 0 1 1-12.73 0"/>
+        <line x1="12" y1="2" x2="12" y2="12"/>
+      </svg>
+      HA 재시작
+    </button>
+    <button class="btn btn-sm" onclick="openAddModal()">＋ 저장소 추가</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="stats" id="stats" style="display:none">
+    <div class="stat-card"><div class="stat-number" id="statTotal">0</div><div class="stat-label">전체 저장소</div></div>
+    <div class="stat-card"><div class="stat-number" id="statInstalled">0</div><div class="stat-label">설치됨</div></div>
+    <div class="stat-card"><div class="stat-number" id="statUpdates" style="color:var(--warning)">0</div><div class="stat-label">업데이트 가능</div></div>
+  </div>
+
+  <div class="filter-bar" id="filterBar" style="display:none">
+    <input type="text" placeholder="저장소 검색..." id="searchInput" oninput="renderRepos()">
+    <div class="filter-tabs">
+      <button class="tab-btn active" onclick="setTab('all',this)">전체</button>
+      <button class="tab-btn" onclick="setTab('installed',this)">설치됨</button>
+      <button class="tab-btn" onclick="setTab('updates',this)">업데이트</button>
+      <button class="tab-btn" onclick="setTab('not_installed',this)">미설치</button>
+    </div>
+  </div>
+
+  <div class="repo-grid" id="repoGrid">
+    <div class="loading"><div class="spinner"></div><div>저장소 정보 불러오는 중...</div></div>
+  </div>
+</div>
+
+<!-- 저장소 추가 모달 -->
+<div class="modal-backdrop" id="addModal">
+  <div class="modal">
+    <h2>저장소 추가</h2>
+    <div class="modal-field">
+      <label>GitHub 저장소 *</label>
+      <input id="addRepo" placeholder="owner/repo-name 또는 https://github.com/owner/repo" autocomplete="off" oninput="handleRepoInput(event)">
+      <div class="hint">전체 URL 또는 owner/repo-name 형식 모두 지원</div>
+      <div class="repo-preview" id="repoPreview">
+        <div class="repo-preview-name" id="previewName"></div>
+        <div class="repo-preview-desc" id="previewDesc"></div>
+        <div class="repo-preview-component" id="previewComponent"></div>
+      </div>
+    </div>
+    <div class="modal-field" id="branchField" style="display:none">
+      <label>브랜치 선택</label>
+      <div class="branch-select-list" id="branchSelectList"></div>
+    </div>
+    <div class="modal-field" id="updateModeField" style="display:none">
+      <label>업데이트 방식</label>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button class="btn btn-sm" id="modeBtnRelease" onclick="selectUpdateMode('release')"
+          style="flex:1">📦 릴리즈</button>
+        <button class="btn btn-sm" id="modeBtnCommit" onclick="selectUpdateMode('commit')"
+          style="flex:1">🔀 커밋 추적</button>
+      </div>
+      <div class="hint" id="updateModeHint"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeAddModal()">취소</button>
+      <button class="btn btn-primary" onclick="submitAddRepo()" id="addSubmitBtn" disabled>추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- README 모달 -->
+<div class="modal-backdrop" id="readmeModal">
+  <div class="modal">
+    <h2 id="readmeTitle">저장소 정보</h2>
+    <div class="readme-content" id="readmeContent">
+      <div class="loading"><div class="spinner"></div><div>README 불러오는 중...</div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeReadmeModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 릴리즈 선택 모달 -->
+<div class="modal-backdrop" id="releaseSelectModal">
+  <div class="modal" style="max-width:520px">
+    <h2 id="releaseSelectTitle">버전 선택하여 설치</h2>
+    <div class="release-list" id="releaseList">
+      <div style="text-align:center;padding:40px 0;color:var(--text-secondary)">
+        <div class="spinner" style="width:28px;height:28px;border-width:2px;margin:0 auto 10px"></div>
+        릴리즈 목록 불러오는 중...
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeReleaseModal()">취소</button>
+      <button class="btn btn-primary" id="releaseInstallBtn" disabled onclick="confirmReleaseInstall()">이 버전으로 설치</button>
+    </div>
+  </div>
+</div>
+
+<!-- 확인 모달 -->
+<div class="confirm-backdrop" id="confirmBackdrop">
+  <div class="confirm-box">
+    <h3 id="confirmTitle">확인</h3>
+    <p id="confirmMsg"></p>
+    <div class="confirm-actions">
+      <button class="btn btn-ghost" onclick="closeConfirm()">취소</button>
+      <button class="btn btn-danger" id="confirmOkBtn">확인</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ── 상태 ──
+let repos = [];
+let activeTab = 'all';
+const busyKeys = new Set();
+
+let _pendingRepoInfo = null;
+let _repoLookupTimer = null;
+
+const $el = id => window.__privateHacsPanel
+  ? window.__privateHacsPanel.querySelector('#' + id)
+  : document.getElementById(id);
+
+// ── WS ──
+async function getAuthToken() {
+  if (typeof window.__privateHacsGetToken === 'function') return window.__privateHacsGetToken();
+  return Promise.reject(new Error('패널이 올바르게 로드되지 않았습니다.'));
+}
+let ws = null, msgId = 1;
+const pendingRequests = {};
+
+async function connectWS() {
+  const token = await getAuthToken();
+  return new Promise((resolve, reject) => {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(proto + '://' + location.host + '/api/websocket');
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+      if (msg.type === 'auth_required') ws.send(JSON.stringify({ type: 'auth', access_token: token }));
+      else if (msg.type === 'auth_ok') resolve();
+      else if (msg.type === 'auth_invalid') reject(new Error('HA 인증 실패'));
+      else if (msg.id && pendingRequests[msg.id]) { pendingRequests[msg.id](msg); delete pendingRequests[msg.id]; }
+    };
+    ws.onerror = () => reject(new Error('WebSocket 연결 오류'));
   });
 }
-"""
+function wsSend(msg) {
+  return new Promise(resolve => {
+    const id = msgId++;
+    pendingRequests[id] = resolve;
+    ws.send(JSON.stringify({ ...msg, id }));
+  });
+}
+async function callService(domain, service, data) {
+  return wsSend({ type: 'call_service', domain, service, service_data: data });
+}
 
-async def _async_ensure_marked_js(hass: HomeAssistant, js_dir: str) -> None:
-    """라이브러리 파일이 없으면 HA 공용 세션으로 다운로드합니다."""
-    target = os.path.join(js_dir, "marked.min.js")
-    if await hass.async_add_executor_job(os.path.exists, target):
-        return
-    url = "https://cdn.jsdelivr.net/npm/marked/marked.min.js"
-    _LOGGER.info("Private HACS: Downloading dependency marked.min.js...")
-    try:
-        session = async_get_clientsession(hass)
-        async with session.get(url, timeout=15) as resp:
-            if resp.status == 200:
-                content = await resp.read()
-                def _write() -> None:
-                    with open(target, "wb") as f:
-                        f.write(content)
-                await hass.async_add_executor_job(_write)
-                _LOGGER.info("Private HACS: Successfully downloaded marked.min.js")
-            else:
-                _LOGGER.warning(
-                    "Private HACS: Failed to download marked.min.js — HTTP %s", resp.status
-                )
-    except Exception as err:
-        _LOGGER.error("Error downloading marked.min.js: %s", err)
+// ── 데이터 패치 ──
+async function fetchRepos() {
+  const [statesRes, regRes] = await Promise.all([
+    wsSend({ type: 'get_states' }),
+    wsSend({ type: 'config/entity_registry/list' }),
+  ]);
+  const states = statesRes.result || [];
+  const reg = regRes.result || [];
 
+  const hacsEntities = {};
+  reg.filter(e => e.platform === 'private_hacs').forEach(e => {
+    hacsEntities[e.entity_id] = e.unique_id || '';
+  });
 
-def _write_panel_js_sync(path: str) -> None:
-    if os.path.exists(path):
-        with open(path, "r", encoding="utf-8") as f:
-            if f.read() == _PANEL_JS:
-                return
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(_PANEL_JS)
+  return states
+    .filter(s => s.entity_id.startsWith('update.') && hacsEntities[s.entity_id] !== undefined)
+    .map(s => {
+      const a = s.attributes;
+      let branch = a.branch;
+      let component_id;
+      const uid = hacsEntities[s.entity_id];
 
+      if (branch) {
+        component_id = s.entity_id.replace(/^update\./, '').replace(/_update$/, '');
+        const suffix = '_' + branch;
+        if (component_id.endsWith(suffix)) component_id = component_id.slice(0, -suffix.length);
+      } else {
+        if (!uid.startsWith('repo_') || uid.split('_').length < 3) return null;
+        const lastUnderscore = uid.lastIndexOf('_');
+        branch = uid.slice(lastUnderscore + 1);
+        component_id = uid.slice('repo_'.length, lastUnderscore);
+        if (!branch || !component_id) return null;
+      }
+      if (!component_id || !branch) return null;
 
-async def async_ensure_frontend_assets(hass: HomeAssistant) -> None:
-    """
-    frontend/js/panel.js, marked.min.js를 생성/복구합니다.
+      const entry_key = component_id + '@' + branch;
+      const installed = a.installed_version || s.installed_version || null;
+      const latest = a.latest_version || s.latest_version || null;
+      const hasUpdate = s.state === 'on';
+      const active = (s.state !== 'unavailable' && a.active !== undefined)
+        ? Boolean(a.active) : (s.state !== 'unavailable');
 
-    Private HACS가 자기 자신(component_id == DOMAIN)을 재설치하면
-    download_and_install이 custom_components/private_hacs/ 전체를
-    git 저장소 내용으로 덮어씁니다. 이 런타임 생성 파일들은 git
-    저장소에 포함되어 있지 않으므로 그 과정에서 함께 삭제됩니다.
+      const rawName = a.friendly_name || s.entity_id;
+      let cleanName = rawName.replace(/ update$/i, '').replace(/ \([^)]+\)$/, '');
+      if (cleanName.startsWith('Private HACS ')) cleanName = cleanName.slice(13);
 
-    async_setup_panel()의 정적 경로/사이드바 패널 등록은 hass당 1회만
-    해야 하지만(_REGISTERED_HASS_IDS로 가드), 이 파일 생성 자체는
-    몇 번이든 다시 호출해도 안전하므로 별도 함수로 분리했다.
-    services.py의 _do_install이 self-install 직후 이 함수를 호출해,
-    HA 재시작 없이도 패널이 즉시 복구되도록 한다.
-    """
-    panel_dir = os.path.join(os.path.dirname(__file__), "frontend")
-    js_dir = os.path.join(panel_dir, "js")
-    await hass.async_add_executor_job(os.makedirs, js_dir, 0o777, True)
+      let repoUrl = '';
+      if (a.release_url) {
+        const m2 = a.release_url.match(/github\.com\/([^\/]+\/[^\/]+)/);
+        if (m2) repoUrl = m2[1].replace(/\/(tree|releases|commits).*$/, '');
+      }
 
-    await _async_ensure_marked_js(hass, js_dir)
+      return {
+        entity_id: s.entity_id, entry_key, component_id, branch,
+        name: cleanName, repo_url: repoUrl,
+        installed_version: installed, latest_version: latest,
+        installed_commit_sha: a.installed_commit_sha || null,
+        installed_manifest_version: a.installed_manifest_version || null,
+        remote_commit_sha: a.remote_commit_sha || null,
+        remote_manifest_version: a.remote_manifest_version || null,
+        release_url: a.release_url || null,
+        has_update: hasUpdate, is_installed: !!installed,
+        active,
+        update_mode: a.update_mode || 'release',
+        version_source: a.version_source || (installed ? 'store' : 'none'),
+        latest_type: a.latest_type || null,
+        has_release_or_tag: a.has_release_or_tag === true,
+        has_icon: a.has_icon || false,
+      };
+    })
+    .filter(Boolean);
+}
 
-    await hass.async_add_executor_job(
-        _write_panel_js_sync, os.path.join(js_dir, "panel.js")
-    )
+async function loadData() {
+  try { repos = await fetchRepos(); }
+  catch (err) {
+    toast('데이터 로드 실패: ' + err.message, 'error', 8000);
+    $el('repoGrid').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><p>데이터를 불러오지 못했습니다.<br>' + err.message + '</p></div>';
+    return;
+  }
+  $el('stats').style.display = 'grid';
+  $el('filterBar').style.display = 'flex';
+  renderAll();
+}
 
+function renderAll() { updateStats(); renderRepos(); }
 
-async def async_setup_panel(hass: HomeAssistant) -> None:
-    hass_id = id(hass)
-    if hass_id in _REGISTERED_HASS_IDS:
-        return
+function updateStats() {
+  const compIds = new Set(repos.map(r => r.component_id));
+  $el('statTotal').textContent = compIds.size;
+  $el('statInstalled').textContent = repos.filter(r => r.active && r.is_installed).length;
+  $el('statUpdates').textContent = repos.filter(r => r.active && r.has_update).length;
+}
 
-    panel_dir = os.path.join(os.path.dirname(__file__), "frontend")
-    js_dir = os.path.join(panel_dir, "js")
+function setTab(tab, btn) {
+  activeTab = tab;
+  (window.__privateHacsPanel || document).querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderRepos();
+}
 
-    await async_ensure_frontend_assets(hass)
+function renderRepos() {
+  const q = ($el('searchInput') ? $el('searchInput').value : '').toLowerCase();
+  const grid = $el('repoGrid');
 
-    await hass.http.async_register_static_paths(
-        [
-            StaticPathConfig("/private_hacs_panel", panel_dir, False),
-            StaticPathConfig("/private_hacs_panel/js", js_dir, False),
-            StaticPathConfig(
-                url_path="/private_hacs_icons",
-                path=hass.config.path("custom_components"),
-                cache_headers=False,
-            ),
-        ]
-    )
+  const filtered = repos.filter(r => {
+    const matchQ = !q || r.name.toLowerCase().includes(q) || r.component_id.includes(q) || r.branch.includes(q);
+    const matchTab =
+      activeTab === 'installed' ? (r.active && r.is_installed) :
+      activeTab === 'updates'   ? (r.active && r.has_update) :
+      activeTab === 'not_installed' ? (!r.is_installed) : true;
+    return matchQ && matchTab;
+  });
 
-    await async_register_panel(
-        hass,
-        webcomponent_name="private-hacs-panel",
-        sidebar_title=PANEL_TITLE,
-        sidebar_icon=PANEL_ICON,
-        frontend_url_path=PANEL_URL,
-        js_url=f"/private_hacs_panel/js/panel.js?t={int(time.time())}",
-        require_admin=True,
-    )
+  if (filtered.length === 0) {
+    grid.innerHTML = repos.length === 0
+      ? '<div class="empty"><div class="empty-icon">📦</div><p>등록된 저장소가 없습니다.<br>우상단 <b>＋ 저장소 추가</b> 버튼으로 추가하세요.</p></div>'
+      : '<div class="empty"><div class="empty-icon">🔍</div><p>검색 결과가 없습니다.</p></div>';
+    return;
+  }
 
-    _REGISTERED_HASS_IDS.add(hass_id)
+  const groupMap = new Map();
+  filtered.forEach(r => {
+    if (!groupMap.has(r.component_id)) groupMap.set(r.component_id, []);
+    groupMap.get(r.component_id).push(r);
+  });
 
+  grid.innerHTML = Array.from(groupMap.entries()).map(([cid, branches]) => groupHTML(cid, branches)).join('');
+}
 
-async def async_remove_panel(hass: HomeAssistant) -> None:
-    hass_id = id(hass)
-    if hass_id not in _REGISTERED_HASS_IDS:
-        return
-    frontend_remove_panel(hass, PANEL_URL)
-    _REGISTERED_HASS_IDS.discard(hass_id)
+function groupHTML(componentId, branches) {
+  const first = branches[0];
+  const hasAnyUpdate = branches.some(b => b.active && b.has_update);
+  const iconContent = first.has_icon
+    ? '<img src="/private_hacs_icons/' + componentId + '/brand/icon.png" onerror="this.outerHTML=\'🧩\'">'
+    : '🧩';
+  const repoHref = first.repo_url ? 'https://github.com/' + first.repo_url : null;
+  const iconClick = repoHref ? 'onclick="window.open(\'' + esc(repoHref) + '\',\'_blank\')" style="cursor:pointer"' : '';
+  const titleClick = repoHref ? 'onclick="window.open(\'' + esc(repoHref) + '\',\'_blank\')" style="cursor:pointer"' : '';
+  const readmeLink = first.repo_url
+    ? '<a href="javascript:void(0)" onclick="openReadmeModal(\'' + esc(first.repo_url) + '\',\'' + esc(first.name) + '\')" class="readme-link" title="README 보기">README</a>'
+    : '';
+  const branchRows = branches.map(r => branchRowHTML(r)).join('');
+
+  return '<div class="repo-group' + (hasAnyUpdate ? ' has-update' : '') + '">'
+    + '<div class="group-header">'
+    + '<div class="group-icon" ' + iconClick + '>' + iconContent + '</div>'
+    + '<div style="flex:1;min-width:0;">'
+    + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+    + '<div class="group-title" ' + titleClick + '>' + esc(first.name) + '</div>'
+    + readmeLink
+    + '</div>'
+    + '<div class="group-component-id">' + esc(componentId) + '</div>'
+    + '</div>'
+    + '</div>'
+    + branchRows
+    + '</div>';
+}
+
+function branchRowHTML(r) {
+  const busy = busyKeys.has(r.entry_key);
+  const inactive = !r.active;
+
+  const statusBadge = r.is_installed
+    ? (r.has_update ? '<span class="badge badge-update">⬆ 업데이트</span>' : '<span class="badge badge-installed">✓ 최신</span>')
+    : '<span class="badge badge-not-installed">미설치</span>';
+
+  const sourceBadge = r.version_source === 'manifest'
+    ? '<span class="badge badge-manifest">📄 자동 감지</span>' : '';
+
+  // 설치 배지: installed_version은 commit 모드일 때 SHA 7자리를 우선
+  // 반환하므로, manifest 버전이 있으면 "버전/SHA" 형태로 합쳐서 표시한다.
+  // (latestBadge와 동일한 패턴 — 1순위 SHA, 표시는 버전과 함께)
+  let installedBadge = '';
+  if (r.installed_version) {
+    const installedShaShort = r.installed_commit_sha ? String(r.installed_commit_sha).slice(0, 7) : '';
+    const isInstalledVersionTheSha = installedShaShort && r.installed_version === installedShaShort;
+    let installedDisplay;
+    if (isInstalledVersionTheSha && r.installed_manifest_version) {
+      installedDisplay = esc(r.installed_manifest_version) + esc('/' + installedShaShort);
+    } else if (isInstalledVersionTheSha) {
+      installedDisplay = esc(r.installed_version);
+    } else {
+      installedDisplay = esc(r.installed_version) + (installedShaShort ? esc('/' + installedShaShort) : '');
+    }
+    installedBadge = '<span class="badge badge-version">설치: ' + installedDisplay + '</span>';
+  }
+
+  // 최신 배지: latest_version은 SHA 1순위(없으면 manifest 버전)로 채워져 있음.
+  // 화면에는 "버전/SHA" 형태로 둘 다 보여준다 — manifest 버전이 있고
+  // latest_version이 SHA라면 "2.1.3/e02eb77"처럼 합쳐서 표시.
+  let latestBadge = '';
+  if (r.has_update && r.latest_version) {
+    const latestShaShort = r.remote_commit_sha ? String(r.remote_commit_sha).slice(0, 7) : '';
+    const isLatestVersionTheSha = latestShaShort && r.latest_version === latestShaShort;
+    let latestDisplay;
+    if (isLatestVersionTheSha && r.remote_manifest_version) {
+      // latest_version이 SHA이고 manifest 버전도 있으면: "버전/SHA"
+      latestDisplay = esc(r.remote_manifest_version) + esc('/' + latestShaShort);
+    } else if (isLatestVersionTheSha) {
+      // SHA만 있음 (manifest 버전 없음)
+      latestDisplay = esc(r.latest_version);
+    } else {
+      // latest_version이 이미 manifest 버전 — SHA를 붙여서 보여줌
+      latestDisplay = esc(r.latest_version) + (latestShaShort ? esc('/' + latestShaShort) : '');
+    }
+    latestBadge = '<span class="badge badge-version">최신: ' + latestDisplay + '</span>';
+  }
+
+  const isCommitUrl = r.release_url && r.release_url.includes('/commits/');
+  const linkLabel = isCommitUrl ? '커밋 로그 ↗' : '릴리즈 노트 ↗';
+  const releaseLink = r.release_url
+    ? '<a href="' + esc(r.release_url) + '" target="_blank" class="release-link">' + linkLabel + '</a>' : '';
+
+  const isReleaseType = r.latest_type === 'release' || r.latest_type === 'tag';
+  // commit 모드는 릴리즈를 아예 조회하지 않으므로 latest_type만으로는
+  // "릴리즈가 진짜 없는지" 판단할 수 없다(사용자가 의도적으로 commit을
+  // 선택했을 뿐 릴리즈가 있을 수도 있음). coordinator가 캐시해둔
+  // has_release_or_tag로 정확히 판단한다.
+  const noReleaseAvailable = !r.has_release_or_tag;
+
+  let updateModeBadge;
+  if (busy) {
+    updateModeBadge = '<span class="badge" style="background:var(--surface3);color:var(--text-secondary)">'
+      + (r.update_mode === 'commit' ? '커밋 추적' : '릴리즈') + '</span>';
+  } else if (r.update_mode === 'commit' && noReleaseAvailable) {
+    // 릴리즈/태그가 없어 강제로 커밋 추적 중 — 전환 불가 안내
+    updateModeBadge = '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:default;opacity:.7" '
+      + 'title="이 저장소에는 릴리즈/태그가 없어 커밋 추적만 가능합니다. 릴리즈가 생성되면 전환할 수 있습니다.">커밋 추적</span>';
+  } else if (r.update_mode === 'commit') {
+    updateModeBadge = '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:pointer" '
+      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경">커밋 추적</span>';
+  } else {
+    updateModeBadge = '<span class="badge" style="background:rgba(3,169,244,.1);color:var(--primary);cursor:pointer" '
+      + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'commit\')" title="커밋 추적 모드로 변경">릴리즈</span>';
+  }
+
+  const isSingleBranch = repos.filter(repo => repo.component_id === r.component_id).length <= 1;
+  const toggleDisabled = busy || isSingleBranch;
+
+  const toggleHtml = '<div class="toggle-wrap">'
+    + '<label class="toggle"'
+    + (isSingleBranch ? ' title="브랜치가 하나뿐인 저장소는 비활성화할 수 없습니다"' : '')
+    + '><input type="checkbox"' + (r.active ? ' checked' : '')
+    + (toggleDisabled ? ' disabled' : '')
+    + ' onchange="toggleBranch(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',this.checked)">'
+    + '<span class="toggle-slider"></span></label>'
+    + '</div>';
+
+  let actions = '';
+  if (busy) {
+    actions = '<button class="btn btn-primary btn-sm" disabled>⏳ 처리 중...</button>';
+  } else if (!r.active) {
+    actions = '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
+  } else if (!r.is_installed) {
+    actions = '<button class="btn btn-success btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬇ 설치</button>'
+      + '<button class="btn btn-danger btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
+  } else if (r.has_update) {
+    actions = '<button class="btn btn-warning btn-sm" onclick="install(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">⬆ 업데이트</button>'
+      + '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>'
+      + '<button class="btn btn-ghost btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
+  } else {
+    const reinstallBtn = isReleaseType
+      ? '<button class="btn btn-ghost btn-sm" onclick="openReleaseModal(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\',\'' + esc(r.installed_version || '') + '\')">🔄 재설치</button>'
+      : '<button class="btn btn-ghost btn-sm" onclick="reinstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">🔄 재설치</button>';
+    actions = reinstallBtn
+      + '<button class="btn btn-danger btn-sm" onclick="uninstall(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">컴포넌트 삭제</button>'
+      + '<button class="btn btn-ghost btn-sm btn-remove" onclick="removeRepo(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'' + esc(r.name) + '\')">등록 해제</button>';
+  }
+
+  // 브랜치 행 구조:
+  // [토글 1열 1-2행] | [브랜치명 + 배지  2열 1행]
+  //                  | [버튼들           2열 2행]
+  return '<div class="branch-row' + (inactive ? ' inactive' : '') + '">'
+    + toggleHtml
+    + '<div class="branch-label">'
+    +   '<span class="branch-name">' + esc(r.branch) + '</span>'
+    +   '<div class="branch-meta">' + statusBadge + sourceBadge + updateModeBadge + installedBadge + latestBadge + releaseLink + '</div>'
+    + '</div>'
+    + '<div class="branch-actions">' + actions + '</div>'
+    + '</div>';
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── 브랜치 토글 ──
+async function toggleBranch(componentId, branch, active) {
+  const key = componentId + '@' + branch;
+  const r = repos.find(r => r.component_id === componentId && r.branch === branch);
+  const name = r ? r.name : componentId;
+
+  if (!active) {
+    const siblings = repos.filter(r => r.component_id === componentId);
+    if (siblings.length <= 1) {
+      toast('브랜치가 하나뿐인 저장소는 비활성화할 수 없습니다.', 'warning', 4000);
+      renderRepos(); return;
+    }
+    if (r) r.active = false;
+    renderAll();
+    try {
+      await callService('private_hacs', 'toggle_branch', { component_id: componentId, branch, active: false });
+      toast(name + ' (' + branch + ') 비활성화됨', 'info', 2500);
+    } catch (err) {
+      toast('비활성화 실패: ' + err.message, 'error');
+      if (r) r.active = true; renderAll();
+    }
+    return;
+  }
+
+  repos.forEach(repo => { if (repo.component_id === componentId) repo.active = repo.branch === branch; });
+  busyKeys.add(key); renderAll();
+  toast(name + ' (' + branch + ') 활성화 중...', 'info', 4000);
+
+  try {
+    await callService('private_hacs', 'toggle_branch', { component_id: componentId, branch, active: true });
+    await new Promise(res => setTimeout(res, 1500));
+    repos = await fetchRepos(); busyKeys.delete(key); renderAll();
+
+    const updated = repos.find(r => r.component_id === componentId && r.branch === branch);
+    if (!updated) {
+      toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
+    } else if (!updated.is_installed) {
+      showConfirm('브랜치 설치',
+        name + ' (' + branch + ') 브랜치를 활성화했습니다.\n\n아직 설치되지 않은 브랜치입니다.\n지금 설치하시겠습니까?\n\n취소하면 나중에 수동으로 설치할 수 있습니다.',
+        async () => {
+          busyKeys.add(key); renderRepos();
+          toast(name + ' (' + branch + ') 설치 중...', 'info');
+          try {
+            await callService('private_hacs', 'install', { component_id: componentId, branch });
+            toast(name + ' (' + branch + ') 설치 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
+            repos = await fetchRepos(); renderAll();
+          } catch (err) { toast('설치 실패: ' + err.message, 'error', 6000); }
+          finally { busyKeys.delete(key); renderRepos(); }
+        });
+    } else if (updated.has_update) {
+      showConfirm('브랜치 업데이트',
+        name + ' (' + branch + ') 브랜치를 활성화했습니다.\n\n새로운 업데이트가 있습니다.\n지금 업데이트하시겠습니까?\n\n취소하면 나중에 수동으로 업데이트할 수 있습니다.',
+        async () => {
+          busyKeys.add(key); renderRepos();
+          toast(name + ' (' + branch + ') 업데이트 중...', 'info');
+          try {
+            await callService('private_hacs', 'install', { component_id: componentId, branch });
+            toast(name + ' (' + branch + ') 업데이트 완료! HA를 재시작해야 적용됩니다.', 'success', 7000);
+            repos = await fetchRepos(); renderAll();
+          } catch (err) { toast('업데이트 실패: ' + err.message, 'error', 6000); }
+          finally { busyKeys.delete(key); renderRepos(); }
+        });
+    } else {
+      toast(name + ' (' + branch + ') 활성화됨.', 'success', 3000);
+    }
+  } catch (err) {
+    toast('활성화 실패: ' + err.message, 'error', 6000);
+    repos = await fetchRepos(); renderAll();
+  } finally { busyKeys.delete(key); renderRepos(); }
+}
+
+// ── 업데이트 모드 변경 ──
+async function setUpdateMode(componentId, branch, mode) {
+  const r = repos.find(r => r.component_id === componentId && r.branch === branch);
+  const name = r ? r.name : componentId;
+  const modeLabel = mode === 'commit' ? '커밋 추적' : '릴리즈';
+  const key = componentId + '@' + branch;
+  busyKeys.add(key); renderRepos();
+  try {
+    // set_update_mode 서비스 자체가 내부적으로
+    // coordinator.async_request_refresh()를 await하므로,
+    // 이 호출이 끝나면 release_url(릴리즈 노트/커밋 로그 링크)도
+    // 새 모드 기준으로 이미 갱신되어 있다. 별도 refresh 호출은
+    // 불필요할 뿐 아니라 레이스 컨디션의 원인이 되므로 추가하지 않는다.
+    await callService('private_hacs', 'set_update_mode', { component_id: componentId, branch, update_mode: mode });
+    repos = await fetchRepos();
+    toast(name + ' (' + branch + ') 업데이트 모드: ' + modeLabel, 'success', 3000);
+  } catch (err) {
+    toast('모드 변경 실패: ' + err.message, 'error', 5000);
+  } finally {
+    busyKeys.delete(key);
+    renderAll();
+  }
+}
+
+// ── 설치/재설치/삭제 ──
+async function install(componentId, branch, name) {
+  const key = componentId + '@' + branch;
+  busyKeys.add(key); renderRepos();
+  toast(name + ' (' + branch + ') 설치 중...', 'info');
+  try {
+    await callService('private_hacs', 'install', { component_id: componentId, branch });
+    toast(name + ' (' + branch + ') 설치 완료! HA를 재시작해야 적용됩니다.', 'success', 6000);
+    repos = await fetchRepos(); renderAll();
+  } catch (err) { toast('설치 실패: ' + err.message, 'error', 6000); }
+  finally { busyKeys.delete(key); renderRepos(); }
+}
+
+async function reinstall(componentId, branch, name) {
+  showConfirm('재설치 확인',
+    name + ' (' + branch + ') 브랜치를 재설치하시겠습니까?\n\n재설치 후 HA를 재시작해야 적용됩니다.',
+    () => install(componentId, branch, name));
+}
+
+async function uninstall(componentId, branch, name) {
+  showConfirm('컴포넌트 삭제',
+    name + ' (' + branch + ') 컴포넌트를 삭제하시겠습니까?\n\n저장소 등록은 유지됩니다.\n삭제 후 HA를 재시작해야 완전히 제거됩니다.',
+    async () => {
+      const key = componentId + '@' + branch;
+      busyKeys.add(key); renderRepos();
+      toast(name + ' (' + branch + ') 삭제 중...', 'info');
+      try {
+        await callService('private_hacs', 'uninstall', { component_id: componentId });
+        toast(name + ' (' + branch + ') 삭제 완료. HA를 재시작하세요.', 'success', 6000);
+        repos = await fetchRepos(); renderAll();
+      } catch (err) { toast('삭제 실패: ' + err.message, 'error', 6000); }
+      finally { busyKeys.delete(key); renderRepos(); }
+    });
+}
+
+async function removeRepo(componentId, branch, name) {
+  const r = repos.find(r => r.component_id === componentId && r.branch === branch);
+  const isActive = r && r.active;
+  const siblings = repos.filter(r => r.component_id === componentId && r.branch !== branch);
+  const hasSiblings = siblings.length > 0;
+
+  let confirmMsg = name + ' (' + branch + ') 브랜치를 Private HACS에서 제거하시겠습니까?\n\n설치된 파일은 자동으로 삭제되지 않습니다.';
+  if (isActive && hasSiblings) confirmMsg += '\n\n⚠️ 현재 활성화된 브랜치입니다.\n등록 해제 후 다른 브랜치를 직접 활성화해야 합니다.';
+  else if (isActive && !hasSiblings) confirmMsg += '\n\n⚠️ 현재 활성화된 브랜치이며 다른 등록된 브랜치가 없습니다.\n등록 해제 후 활성 브랜치가 없는 상태가 됩니다.';
+
+  showConfirm('저장소 등록 해제', confirmMsg,
+    async () => {
+      try {
+        await callService('private_hacs', 'remove_repo', { component_id: componentId, branch });
+        toast(name + ' (' + branch + ') 등록 해제 완료.', 'success');
+        await new Promise(r => setTimeout(r, 500));
+        repos = await fetchRepos(); renderAll();
+      } catch (err) { toast('등록 해제 실패: ' + err.message, 'error', 6000); }
+    });
+}
+
+async function confirmRestart() {
+  showConfirm('HA 재시작',
+    'Home Assistant를 재시작하시겠습니까?\n\n재시작 중에는 모든 자동화와 통합이 잠시 중단됩니다.',
+    async () => {
+      try {
+        await callService('homeassistant', 'restart', {});
+        toast('HA 재시작 요청을 보냈습니다. 잠시 후 연결이 끊길 수 있습니다.', 'info', 6000);
+      } catch (err) { toast('재시작 실패: ' + err.message, 'error', 5000); }
+    });
+}
+
+async function refreshAll() {
+  const btn = $el('refreshBtn');
+  btn.disabled = true; btn.textContent = '⏳ 새로고침 중...';
+  toast('버전 정보 새로고침 중...', 'info');
+  try {
+    await callService('private_hacs', 'refresh', {});
+    await new Promise(r => setTimeout(r, 2000));
+    repos = await fetchRepos(); renderAll();
+    toast('새로고침 완료', 'success');
+  } catch (err) { toast('새로고침 실패: ' + err.message, 'error'); }
+  finally { btn.disabled = false; btn.textContent = '🔄 새로고침'; }
+}
+
+// ── 릴리즈 선택 모달 ──
+let _releaseModalState = { componentId: null, branch: null, name: null, releases: [], selectedTag: null, installedVersion: null };
+
+async function openReleaseModal(componentId, branch, name, installedVersion) {
+  _releaseModalState = { componentId, branch, name, releases: [], selectedTag: null, installedVersion };
+  console.log('[Private HACS] openReleaseModal installedVersion:', installedVersion);
+  $el('releaseSelectTitle').textContent = name + ' (' + branch + ') — 버전 선택';
+  $el('releaseInstallBtn').disabled = true;
+  $el('releaseList').innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-secondary)"><div class="spinner" style="width:28px;height:28px;border-width:2px;margin:0 auto 10px"></div>릴리즈 목록 불러오는 중...</div>';
+  $el('releaseSelectModal').classList.add('open');
+  try {
+    const res = await wsSend({
+      type: 'call_service', domain: 'private_hacs', service: 'get_releases',
+      service_data: { component_id: componentId, branch }, return_response: true,
+    });
+    if (res.error) throw new Error(res.error.message || '조회 실패');
+    const releases = ((res.result && res.result.response) || res.response || res.result || {}).releases || [];
+    _releaseModalState.releases = releases;
+    renderReleaseList(releases, installedVersion);
+  } catch (err) {
+    $el('releaseList').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><p>' + esc(err.message) + '</p></div>';
+  }
+}
+
+function renderReleaseList(releases, installedVersion) {
+  console.log('[Private HACS] renderReleaseList installedVersion:', installedVersion, 'releases:', releases.map(r => r.tag_name));
+  const normalizeVer = v => v ? String(v).replace(/^v/, '') : '';
+  const normalizedInstalled = normalizeVer(installedVersion);
+  if (!releases.length) {
+    $el('releaseList').innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>릴리즈가 없습니다.</p></div>';
+    return;
+  }
+  $el('releaseList').innerHTML = releases.map((r, idx) => {
+    const isCurrent = normalizedInstalled && normalizeVer(r.tag_name) === normalizedInstalled;
+    const nameDisplay = (r.name && r.name !== r.tag_name)
+      ? '<div class="release-item-name">' + esc(r.name) + '</div><div class="release-item-tag">' + esc(r.tag_name) + '</div>'
+      : '<div class="release-item-name">' + esc(r.tag_name) + '</div>';
+    return '<div class="release-item" data-idx="' + idx + '" onclick="selectRelease(' + idx + ')">'
+      + '<div class="release-item-radio"></div>'
+      + '<div class="release-item-info">' + nameDisplay + '</div>'
+      + (r.prerelease ? '<span class="release-item-badge">pre</span>' : '')
+      + (isCurrent ? '<span class="release-current-badge">현재</span>' : '')
+      + (r.published_at ? '<span class="release-item-date">' + esc(r.published_at) + '</span>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function selectRelease(idx) {
+  if (!_releaseModalState.releases[idx]) return;
+  _releaseModalState.selectedTag = _releaseModalState.releases[idx].tag_name;
+  $el('releaseList').querySelectorAll('.release-item').forEach(el => el.classList.remove('selected'));
+  const target = $el('releaseList').querySelector('[data-idx="' + idx + '"]');
+  if (target) target.classList.add('selected');
+  $el('releaseInstallBtn').disabled = false;
+}
+
+async function confirmReleaseInstall() {
+  const { componentId, branch, name, selectedTag, installedVersion } = _releaseModalState;
+  if (!selectedTag) return;
+  const isSame = installedVersion && selectedTag === installedVersion;
+  const label = isSame ? '재설치' : '설치';
+  closeReleaseModal();
+  const key = componentId + '@' + branch;
+  busyKeys.add(key); renderRepos();
+  toast(name + ' ' + selectedTag + ' ' + label + ' 중...', 'info');
+  try {
+    await callService('private_hacs', 'install', { component_id: componentId, branch, ref: selectedTag });
+    toast(name + ' ' + selectedTag + ' ' + label + ' 완료! HA를 재시작해야 적용됩니다.', 'success', 6000);
+    repos = await fetchRepos(); renderAll();
+  } catch (err) { toast(label + ' 실패: ' + err.message, 'error', 6000); }
+  finally { busyKeys.delete(key); renderRepos(); }
+}
+
+function closeReleaseModal() {
+  $el('releaseSelectModal').classList.remove('open');
+  _releaseModalState = { componentId: null, branch: null, name: null, releases: [], selectedTag: null, installedVersion: null };
+}
+
+// ── README 모달 ──
+async function openReadmeModal(repoUrl, name) {
+  $el('readmeTitle').textContent = name;
+  $el('readmeContent').innerHTML = '<div class="loading"><div class="spinner"></div><div>README 불러오는 중...</div></div>';
+  $el('readmeModal').classList.add('open');
+  try {
+    const res = await wsSend({
+      type: 'call_service', domain: 'private_hacs', service: 'get_readme',
+      service_data: { repo: repoUrl }, return_response: true,
+    });
+    if (res.error) throw new Error(res.error.message || '조회 실패');
+    const content = ((res.result && res.result.response) || res.response || res.result || {}).content || 'README 내용이 없습니다.';
+    if (window.marked && typeof marked.parse === 'function') {
+      marked.setOptions({ gfm: true, breaks: true });
+      $el('readmeContent').innerHTML = '<div class="markdown-body">' + marked.parse(content) + '</div>';
+    } else {
+      $el('readmeContent').innerHTML = '<pre style="white-space:pre-wrap">' + esc(content) + '</pre>';
+    }
+  } catch (err) {
+    $el('readmeContent').innerHTML = '<div class="empty"><div class="empty-icon">⚠️</div><p>' + err.message + '</p></div>';
+  }
+}
+function closeReadmeModal() { $el('readmeModal').classList.remove('open'); }
+
+// ── 저장소 추가 모달 ──
+function _parseRepoInput(val) {
+  val = val.trim();
+  const m = val.match(/github\.com\/([a-zA-Z0-9_\-]+\/[a-zA-Z0-9_\-\.]+)/);
+  if (m) return m[1].replace(/\.git$/, '');
+  if (/^[a-zA-Z0-9_\-]+\/[a-zA-Z0-9_\-\.]+$/.test(val)) return val;
+  return null;
+}
+
+function openAddModal() {
+  _pendingRepoInfo = null;
+  $el('addRepo').value = '';
+  $el('repoPreview').classList.remove('visible');
+  $el('branchField').style.display = 'none';
+  $el('branchSelectList').innerHTML = '';
+  $el('addSubmitBtn').disabled = true;
+  $el('addModal').classList.add('open');
+  setTimeout(() => { const el = $el('addRepo'); if (el) el.focus(); }, 50);
+}
+
+function handleRepoInput(e) {
+  const repo = _parseRepoInput(e.target.value);
+  $el('repoPreview').classList.remove('visible');
+  $el('branchField').style.display = 'none';
+  $el('branchSelectList').innerHTML = '';
+  $el('addSubmitBtn').disabled = true;
+  _pendingRepoInfo = null;
+  clearTimeout(_repoLookupTimer);
+  if (!repo) return;
+  _repoLookupTimer = setTimeout(() => lookupRepo(repo), 800);
+}
+
+async function lookupRepo(repo) {
+  $el('repoPreview').classList.add('visible');
+  $el('previewName').textContent = '조회 중...';
+  $el('previewDesc').textContent = ''; $el('previewComponent').textContent = '';
+  $el('branchField').style.display = 'none';
+  $el('addSubmitBtn').disabled = true; _pendingRepoInfo = null;
+
+  try {
+    const res = await wsSend({
+      type: 'call_service', domain: 'private_hacs', service: 'get_repo_info',
+      service_data: { repo }, return_response: true,
+    });
+    if (res.error) throw new Error(res.error.message || '조회 실패');
+    const info = (res.result && res.result.response) || res.response || {};
+    const componentIds = info.component_ids || [];
+    const componentId = componentIds.length ? componentIds[0] : repo.split('/')[1].replace(/-/g,'_').toLowerCase();
+    const allBranches = info.branches || [];
+    const defaultBranch = info.default_branch || 'main';
+    const hasReleases = info.has_releases === true;
+
+    const registeredBranches = new Set(
+      repos.filter(r => r.component_id === componentId).map(r => r.branch)
+    );
+
+    const showModeSelectForBranch = (branch) => hasReleases && branch !== defaultBranch;
+
+    _pendingRepoInfo = {
+      repo, name: info.name || repo.split('/')[1],
+      component_id: componentId, branch: null,
+      defaultBranch, hasReleases, showModeSelectForBranch, update_mode: null,
+    };
+
+    $el('previewName').textContent = info.full_name || repo;
+    $el('previewDesc').textContent = info.description || '';
+    $el('previewComponent').textContent = componentIds.length > 1
+      ? 'component_id: ' + componentId + ' (' + componentIds.join(', ') + ' 중 첫 번째)'
+      : 'component_id: ' + componentId;
+
+    $el('branchField').style.display = 'block';
+    renderBranchSelectList(allBranches, registeredBranches, defaultBranch);
+  } catch (err) {
+    $el('previewName').textContent = '조회 실패: ' + err.message;
+    $el('branchField').style.display = 'none';
+  }
+}
+
+function renderBranchSelectList(allBranches, registeredBranches, defaultBranch) {
+  const list = $el('branchSelectList');
+  if (!allBranches.length) {
+    list.innerHTML = '<div class="branch-loading">브랜치 정보를 불러오지 못했습니다.</div>';
+    return;
+  }
+  list.innerHTML = allBranches.map(branch => {
+    const isRegistered = registeredBranches.has(branch);
+    const isDefault = branch === defaultBranch;
+    const cls = 'branch-select-item' + (isRegistered ? ' already-registered' : '');
+    const defaultTag = isDefault ? '<span class="branch-item-tag">기본</span>' : '';
+    const registeredTag = isRegistered ? '<span style="font-size:11px;color:var(--text-secondary);margin-left:4px">등록됨</span>' : '';
+    const onclick = isRegistered ? '' : 'onclick="selectBranchItem(this)"';
+    return '<div class="' + cls + '" data-branch="' + esc(branch) + '" ' + onclick + '>'
+      + '<div class="branch-item-radio"></div>'
+      + '<span class="branch-item-name">' + esc(branch) + '</span>'
+      + defaultTag + registeredTag + '</div>';
+  }).join('');
+}
+
+function selectBranchItem(el) {
+  const branch = el.dataset.branch;
+  $el('branchSelectList').querySelectorAll('.branch-select-item').forEach(i => i.classList.remove('selected'));
+  el.classList.add('selected');
+  if (_pendingRepoInfo && branch) {
+    _pendingRepoInfo.branch = branch;
+    const needsModeSelect = _pendingRepoInfo.hasReleases && branch !== _pendingRepoInfo.defaultBranch;
+    if (needsModeSelect) {
+      $el('updateModeField').style.display = 'block';
+      const btnR = $el('modeBtnRelease'), btnC = $el('modeBtnCommit');
+      if (btnR) btnR.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+      if (btnC) btnC.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+      $el('updateModeHint').textContent = '업데이트 방식을 선택해주세요.';
+      _pendingRepoInfo.update_mode = null;
+      $el('addSubmitBtn').disabled = true;
+    } else {
+      $el('updateModeField').style.display = 'none';
+      _pendingRepoInfo.update_mode = _pendingRepoInfo.hasReleases ? 'release' : 'commit';
+      $el('addSubmitBtn').disabled = false;
+    }
+  }
+}
+
+function selectUpdateMode(mode) {
+  if (!_pendingRepoInfo) return;
+  _pendingRepoInfo.update_mode = mode;
+  const btnRelease = $el('modeBtnRelease'), btnCommit = $el('modeBtnCommit');
+  const hint = $el('updateModeHint');
+  if (mode === 'release') {
+    btnRelease.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    btnCommit.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+    hint.textContent = '릴리즈/태그 기준으로 업데이트합니다.';
+  } else {
+    btnRelease.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
+    btnCommit.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    hint.textContent = '해당 브랜치의 커밋 기준으로 업데이트합니다.';
+  }
+  if (_pendingRepoInfo.branch) $el('addSubmitBtn').disabled = false;
+}
+
+async function submitAddRepo() {
+  if (!_pendingRepoInfo || !_pendingRepoInfo.branch) { toast('브랜치를 선택해주세요.', 'warning'); return; }
+  if (_pendingRepoInfo.hasReleases && _pendingRepoInfo.branch !== _pendingRepoInfo.defaultBranch && !_pendingRepoInfo.update_mode) {
+    toast('업데이트 방식을 선택해주세요.', 'warning'); return;
+  }
+  const { repo, name, component_id, branch, update_mode } = _pendingRepoInfo;
+  const btn = $el('addSubmitBtn');
+  btn.disabled = true; btn.textContent = '추가 중...';
+  try {
+    await callService('private_hacs', 'add_repo', { repo, name, component_id, branch, update_mode: update_mode || 'release' });
+    closeAddModal();
+    toast(name + ' (' + branch + ') 저장소가 추가됐습니다. 잠시 후 목록에 표시됩니다.', 'success', 6000);
+    await new Promise(r => setTimeout(r, 5000));
+    repos = await fetchRepos(); renderAll();
+  } catch (err) {
+    toast('저장소 추가 실패: ' + err.message, 'error', 6000);
+    btn.disabled = false; btn.textContent = '추가';
+  }
+}
+
+function closeAddModal() {
+  $el('addModal').classList.remove('open');
+  _pendingRepoInfo = null;
+  const btn = $el('addSubmitBtn'); if (btn) { btn.disabled = true; btn.textContent = '추가'; }
+  const inp = $el('addRepo'); if (inp) inp.value = '';
+  const prev = $el('repoPreview'); if (prev) prev.classList.remove('visible');
+  const bf = $el('branchField'); if (bf) bf.style.display = 'none';
+  const bsl = $el('branchSelectList'); if (bsl) bsl.innerHTML = '';
+  const umf = $el('updateModeField'); if (umf) umf.style.display = 'none';
+}
+
+function showConfirm(title, msg, cb) {
+  $el('confirmTitle').textContent = title;
+  $el('confirmMsg').textContent = msg;
+  $el('confirmOkBtn').onclick = () => { closeConfirm(); cb(); };
+  $el('confirmBackdrop').classList.add('open');
+}
+function closeConfirm() { $el('confirmBackdrop').classList.remove('open'); }
+
+function toast(msg, type, duration) {
+  type = type || 'info'; duration = duration || 3500;
+  const icons = { success: '✅', error: '❌', info: 'ℹ️', warning: '⚠️' };
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.innerHTML = '<span>' + (icons[type]||'') + '</span><span>' + msg + '</span>';
+  $el('toastContainer').appendChild(el);
+  setTimeout(() => el.remove(), duration);
+}
+
+if (!window._privateHacsKeydown) {
+  window._privateHacsKeydown = true;
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeReleaseModal(); closeAddModal(); closeReadmeModal(); closeConfirm(); }
+  });
+}
+
+(async function() {
+  try { await connectWS(); await loadData(); }
+  catch (err) {
+    $el('repoGrid').innerHTML = '<div class="empty"><div class="empty-icon">🔌</div>'
+      + '<p>' + err.message + '<br><button class="btn btn-primary btn-sm" style="margin-top:12px" onclick="location.reload()">새로고침</button></p></div>';
+  }
+})();
+</script>
+</body>
+</html>
