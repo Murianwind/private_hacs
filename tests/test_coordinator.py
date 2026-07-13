@@ -579,6 +579,42 @@ class TestShaUnknownButInstalled:
         github.verify_installed_sha.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_given_sha_unknown_but_verified_with_manifest_version__when_polled__then_version_also_updated(self, hass):
+        """
+        Given: installed_commit_sha 모름, installed_version은 예전 값("1.9.9")으로
+               남아있는 상태. 디스크 파일은 실제로 remote HEAD와 100% 동일하고
+               원격 manifest.json에는 최신 버전("2.0.2")이 기록되어 있음.
+        When:  _async_update_data 실행
+        Then:  SHA뿐 아니라 installed_version도 원격 manifest 버전으로 갱신됨.
+               (SHA만 갱신하고 버전은 예전 값 그대로 남아 "설치: 1.9.9/cdd39ce"처럼
+                버전과 SHA가 서로 다른 시점을 가리키는 상태가 되는 회귀를 방지)
+        """
+        head_sha = "cdd39cee0e2e486"
+        latest = _commit_latest(head_sha)
+        latest["remote_manifest_version"] = "2.0.2"
+        store = make_store({
+            ("kma_weather", "main"): {
+                "installed_version": "1.9.9", "installed_commit_sha": None,
+            }
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=latest)
+        github.verify_installed_sha = AsyncMock(return_value=True)
+        repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("kma_weather", "main")
+
+        assert result[key]["has_update"] is False
+        assert result[key]["installed_commit_sha"] == head_sha
+        assert result[key]["installed_version"] == "2.0.2"
+        store.async_set_branch.assert_any_call(
+            "kma_weather", "main",
+            {"installed_commit_sha": head_sha, "installed_version": "2.0.2"}
+        )
+
+    @pytest.mark.asyncio
     async def test_given_sha_unknown_and_files_differ_from_head__when_polled__then_still_flagged(self, hass):
         """
         Given: installed_commit_sha 모름, 디스크 파일이 remote HEAD와 다름
