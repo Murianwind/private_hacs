@@ -175,12 +175,15 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
 
                 if verified:
                     installed_commit_sha = head_sha
-                    await self.store.async_set_branch(
-                        component_id, branch, {"installed_commit_sha": installed_commit_sha}
-                    )
+                    new_manifest_version = latest.get("remote_manifest_version")
+                    update_data: dict = {"installed_commit_sha": installed_commit_sha}
+                    if new_manifest_version:
+                        installed_version = new_manifest_version
+                        update_data["installed_version"] = installed_version
+                    await self.store.async_set_branch(component_id, branch, update_data)
                     _LOGGER.debug(
-                        "Verified installed files match %s@%s HEAD — confirmed SHA %s",
-                        component_id, branch, installed_commit_sha[:7],
+                        "Verified installed files match %s@%s HEAD — confirmed SHA %s (version: %s)",
+                        component_id, branch, installed_commit_sha[:7], installed_version,
                     )
                     sha_unknown_but_installed = False
 

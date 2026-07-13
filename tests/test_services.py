@@ -17,6 +17,21 @@ from homeassistant.exceptions import HomeAssistantError
 from conftest import make_store, make_repo_item, make_hass_for_services
 
 
+@pytest.fixture(autouse=True)
+def _patch_frontend_assets():
+    """
+    component_id="private_hacs"(DOMAIN)로 _do_install을 호출하는 모든
+    테스트에서 self-install 분기(프론트엔드 자산 재생성)가 실행된다.
+    실제 파일시스템에 쓰지 않도록 panel.async_ensure_frontend_assets를
+    자동으로 patch한다.
+    """
+    with patch(
+        "custom_components.private_hacs.panel.async_ensure_frontend_assets",
+        AsyncMock(),
+    ) as mocked:
+        yield mocked
+
+
 def _latest_release(version="v2.0.0"):
     return {
         "type": "release", "version": version, "download_ref": version,
@@ -32,7 +47,14 @@ def _latest_commit(sha="abc123abc123", branch="main"):
     }
 
 def _make_install_setup(repos, store, latest, branch="main"):
-    """_do_install 테스트용 hass 셋업 — coordinator.data에 entry_key 주입."""
+    """_do_install 테스트용 hass 셋업 — coordinator.data에 entry_key 주입.
+
+    component_id="private_hacs"는 DOMAIN과 같으므로 _do_install의
+    self-install 분기(프론트엔드 자산 재생성)가 항상 실행된다.
+    실제 파일 I/O를 피하기 위해 panel.async_ensure_frontend_assets를
+    자동으로 patch한다 — mock은 각 테스트 함수에서 patch 컨텍스트로
+    감싸 쓰거나, 아래 헬퍼가 반환하는 patcher를 사용한다.
+    """
     github = AsyncMock()
     github.download_and_install = AsyncMock()
     entry_key = make_entry_key("private_hacs", branch)
@@ -138,6 +160,72 @@ class TestDoInstall:
 
         with pytest.raises(HomeAssistantError):
             await _do_install(hass, "private_hacs", "main")
+
+    @pytest.mark.asyncio
+    async def test_given_self_install__when_install__then_frontend_assets_regenerated(
+        self, _patch_frontend_assets
+    ):
+        """
+        Given: component_id="private_hacs" (Private HACS 자기 자신 재설치)
+        When:  _do_install 호출
+        Then:  panel.async_ensure_frontend_assets가 호출됨.
+               Private HACS 재설치는 custom_components/private_hacs/ 전체를
+               git 저장소 내용으로 덮어써서 런타임 생성 파일(frontend/js/panel.js
+               등)을 지우므로, HA 재시작 없이 패널이 계속 동작하려면 설치
+               직후 이 재생성이 반드시 호출되어야 한다.
+        """
+        repos = [make_repo_item()]
+        store = make_store()
+        hass, _, _ = _make_install_setup(repos, store, _latest_release())
+
+        await _do_install(hass, "private_hacs", "main")
+
+        _patch_frontend_assets.assert_called_once_with(hass)
+
+    @pytest.mark.asyncio
+    async def test_given_other_component_install__when_install__then_frontend_assets_not_touched(
+        self, _patch_frontend_assets
+    ):
+        """
+        Given: component_id="my_lg" (Private HACS 자신이 아닌 다른 컴포넌트)
+        When:  _do_install 호출
+        Then:  panel.async_ensure_frontend_assets가 호출되지 않음
+               (다른 컴포넌트 설치는 Private HACS 자신의 디렉토리를
+                건드리지 않으므로 프론트엔드 자산이 삭제될 일이 없음)
+        """
+        repos = [make_repo_item(component_id="my_lg")]
+        store = make_store()
+        github = AsyncMock()
+        github.download_and_install = AsyncMock()
+        entry_key = make_entry_key("my_lg", "main")
+        coord = MagicMock()
+        coord.repos = list(repos)
+        coord.data = {entry_key: {"latest": _latest_release(), "repo": "Murianwind/my_lg"}}
+        coord.async_refresh = AsyncMock()
+        hass, entry, ed, _ = make_hass_for_services(repos, store, github, coord, coord.data)
+
+        await _do_install(hass, "my_lg", "main")
+
+        _patch_frontend_assets.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_given_self_install_and_regen_fails__when_install__then_install_still_succeeds(
+        self, _patch_frontend_assets
+    ):
+        """
+        Given: component_id="private_hacs", 프론트엔드 자산 재생성 중 예외 발생
+        When:  _do_install 호출
+        Then:  설치 자체는 예외 없이 완료됨 (재생성 실패가 설치 성공을 막지
+               않아야 함 — 최악의 경우에도 사용자는 HA 재시작으로 복구 가능)
+        """
+        _patch_frontend_assets.side_effect = Exception("디스크 쓰기 실패")
+        repos = [make_repo_item()]
+        store = make_store()
+        hass, _, _ = _make_install_setup(repos, store, _latest_release())
+
+        await _do_install(hass, "private_hacs", "main")  # 예외 없이 완료되어야 함
+
+        store.async_set_branch.assert_called()
 
 
 # ══════════════════════════════════════════════════════════════════════

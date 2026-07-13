@@ -215,6 +215,22 @@ async def _do_install(
     except Exception as exc:
         raise HomeAssistantError(f"설치 실패: {exc}") from exc
 
+    if component_id == DOMAIN:
+        # Private HACS가 자기 자신을 재설치하면 download_and_install이
+        # custom_components/private_hacs/ 전체를 git 저장소 내용으로
+        # 덮어쓴다. frontend/js/panel.js, marked.min.js는 git 저장소에
+        # 없는 런타임 생성 파일이라 이 과정에서 함께 삭제되고, 원래는
+        # HA 재시작 시 async_setup_panel()이 다시 호출될 때만 복구됐다.
+        # 재시작 없이도 패널이 계속 동작하도록 여기서 즉시 재생성한다.
+        try:
+            from .panel import async_ensure_frontend_assets
+            await async_ensure_frontend_assets(hass)
+        except Exception as err:
+            _LOGGER.warning(
+                "Private HACS 자체 재설치 후 프론트엔드 자산 재생성 실패: %s. "
+                "패널이 깨졌다면 HA를 재시작해주세요.", err
+            )
+
     store_data: dict = {"installed_version": install_version}
     if ref:
         # 특정 태그/ref 지정 설치 — commit_sha 초기화

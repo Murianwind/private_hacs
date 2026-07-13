@@ -14,7 +14,7 @@
     --danger: var(--error-color, #f44336);
     --surface:  var(--primary-background-color, #1c1c1e);
     --surface2: var(--secondary-background-color, #2c2c2e);
-    --surface3: var(--card-background-color, var(--secondary-background-color, #3a3a3c));
+    --surface3: var(--secondary-background-color, var(--card-background-color, #3a3a3c));
     --text:     var(--primary-text-color, #e5e5ea);
     --text-secondary: var(--secondary-text-color, #98989f);
     --border:   var(--divider-color, rgba(0,0,0,.12));
@@ -308,14 +308,14 @@
     z-index: 9999; pointer-events: none; max-width: calc(100vw - 32px);
   }
   .toast {
-    background: var(--surface3, #2c2c2e);
-    border: 1px solid var(--border);
+    background: var(--secondary-background-color, var(--card-background-color, #2c2c2e));
+    border: 1px solid var(--divider-color, var(--border));
     border-radius: var(--radius-sm);
     padding: 12px 16px; font-size: 14px; font-family: inherit;
-    color: var(--text);
+    color: var(--primary-text-color, var(--text));
     min-width: 240px; max-width: 360px; pointer-events: auto;
     animation: slideIn .25s ease; display: flex; align-items: center; gap: 10px;
-    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    box-shadow: 0 4px 12px rgba(0,0,0,.25);
   }
   .toast.success { border-left: 3px solid var(--success); }
   .toast.error   { border-left: 3px solid var(--danger); }
