@@ -14,7 +14,7 @@
     --danger: var(--error-color, #f44336);
     --surface:  var(--primary-background-color, #1c1c1e);
     --surface2: var(--secondary-background-color, #2c2c2e);
-    --surface3: var(--card-background-color, #3a3a3c);
+    --surface3: var(--card-background-color, var(--secondary-background-color, #3a3a3c));
     --text:     var(--primary-text-color, #e5e5ea);
     --text-secondary: var(--secondary-text-color, #98989f);
     --border:   var(--divider-color, rgba(0,0,0,.12));
@@ -81,7 +81,7 @@
   .btn-warning { background: var(--warning); color: #1a1200; font-weight: 600; }
   .btn-warning:hover { filter: brightness(1.1); }
   .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
-  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: #c62828; color: #fff; border-color: #c62828; }
   .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
   .btn-sm { padding: 6px 12px; font-size: 13px; }
 
