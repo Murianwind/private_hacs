@@ -78,7 +78,7 @@
   .btn-ghost:hover { background: var(--surface3); color: var(--text); }
   .btn-success { background: var(--success); color: #fff; }
   .btn-success:hover { filter: brightness(1.1); }
-  .btn-warning { background: var(--warning); color: #fff; }
+  .btn-warning { background: var(--warning); color: #1a1200; font-weight: 600; }
   .btn-warning:hover { filter: brightness(1.1); }
   .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
   .btn-danger:hover { background: var(--danger); color: #fff; }
@@ -331,11 +331,11 @@
   }
   .modal-backdrop.open { display: flex; }
   .modal {
-    background: var(--surface2, #2c2c2e);
+    background: var(--card-background-color, var(--secondary-background-color, #fff));
     border: 1px solid var(--border);
     border-radius: var(--radius); padding: 24px;
     width: 92%; max-width: 480px;
-    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    box-shadow: 0 8px 32px rgba(0,0,0,.25);
     max-height: 90vh; display: flex; flex-direction: column;
   }
   #readmeModal .modal { max-width: 760px; width: 95%; height: 85vh; }
@@ -344,7 +344,7 @@
   .modal-field label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 5px; font-weight: 500; }
   .modal-field input {
     width: 100%;
-    background: var(--surface, #1c1c1e);
+    background: var(--primary-background-color, var(--secondary-background-color, #f5f5f5));
     border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 10px 12px;
     color: var(--text);
@@ -356,7 +356,7 @@
 
   .repo-preview {
     display: none;
-    background: var(--surface, #1c1c1e);
+    background: var(--primary-background-color, #f5f5f5);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; font-size: 13px;
   }
@@ -372,7 +372,7 @@
   .branch-select-item {
     display: flex; align-items: center; gap: 10px;
     padding: 9px 12px;
-    background: var(--surface, #1c1c1e);
+    background: var(--primary-background-color, #f5f5f5);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     cursor: pointer; transition: border-color .15s, background .15s;
@@ -446,11 +446,11 @@
   }
   .confirm-backdrop.open { display: flex; }
   .confirm-box {
-    background: var(--surface2, #2c2c2e);
+    background: var(--card-background-color, var(--secondary-background-color, #fff));
     border: 1px solid var(--border);
     border-radius: var(--radius); padding: 24px;
     width: 90%; max-width: 360px;
-    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    box-shadow: 0 8px 32px rgba(0,0,0,.25);
   }
   .confirm-box h3 { margin-bottom: 10px; font-size: 16px; color: var(--text); }
   .confirm-box p { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; line-height: 1.6; white-space: pre-line; }
@@ -562,7 +562,7 @@
   <div class="modal" style="max-width:520px">
     <h2 id="releaseSelectTitle">버전 선택하여 설치</h2>
     <div class="release-list" id="releaseList">
-      <div style="text-align:center;padding:40px 0;color:#98989f">
+      <div style="text-align:center;padding:40px 0;color:var(--text-secondary)">
         <div class="spinner" style="width:28px;height:28px;border-width:2px;margin:0 auto 10px"></div>
         릴리즈 목록 불러오는 중...
       </div>
@@ -1105,7 +1105,7 @@ async function openReleaseModal(componentId, branch, name, installedVersion) {
   console.log('[Private HACS] openReleaseModal installedVersion:', installedVersion);
   $el('releaseSelectTitle').textContent = name + ' (' + branch + ') — 버전 선택';
   $el('releaseInstallBtn').disabled = true;
-  $el('releaseList').innerHTML = '<div style="text-align:center;padding:40px 0;color:#98989f"><div class="spinner" style="width:28px;height:28px;border-width:2px;margin:0 auto 10px"></div>릴리즈 목록 불러오는 중...</div>';
+  $el('releaseList').innerHTML = '<div style="text-align:center;padding:40px 0;color:var(--text-secondary)"><div class="spinner" style="width:28px;height:28px;border-width:2px;margin:0 auto 10px"></div>릴리즈 목록 불러오는 중...</div>';
   $el('releaseSelectModal').classList.add('open');
   try {
     const res = await wsSend({
@@ -1288,7 +1288,7 @@ function renderBranchSelectList(allBranches, registeredBranches, defaultBranch) 
     const isDefault = branch === defaultBranch;
     const cls = 'branch-select-item' + (isRegistered ? ' already-registered' : '');
     const defaultTag = isDefault ? '<span class="branch-item-tag">기본</span>' : '';
-    const registeredTag = isRegistered ? '<span style="font-size:11px;color:#98989f;margin-left:4px">등록됨</span>' : '';
+    const registeredTag = isRegistered ? '<span style="font-size:11px;color:var(--text-secondary);margin-left:4px">등록됨</span>' : '';
     const onclick = isRegistered ? '' : 'onclick="selectBranchItem(this)"';
     return '<div class="' + cls + '" data-branch="' + esc(branch) + '" ' + onclick + '>'
       + '<div class="branch-item-radio"></div>'
