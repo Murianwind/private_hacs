@@ -96,7 +96,7 @@ if (!customElements.get('private-hacs-panel')) {
 async def _async_ensure_marked_js(hass: HomeAssistant, js_dir: str) -> None:
     """라이브러리 파일이 없으면 HA 공용 세션으로 다운로드합니다."""
     target = os.path.join(js_dir, "marked.min.js")
-    if os.path.exists(target):
+    if await hass.async_add_executor_job(os.path.exists, target):
         return
     url = "https://cdn.jsdelivr.net/npm/marked/marked.min.js"
     _LOGGER.info("Private HACS: Downloading dependency marked.min.js...")
@@ -144,7 +144,7 @@ async def async_ensure_frontend_assets(hass: HomeAssistant) -> None:
     """
     panel_dir = os.path.join(os.path.dirname(__file__), "frontend")
     js_dir = os.path.join(panel_dir, "js")
-    os.makedirs(js_dir, exist_ok=True)
+    await hass.async_add_executor_job(os.makedirs, js_dir, 0o777, True)
 
     await _async_ensure_marked_js(hass, js_dir)
 
