@@ -223,16 +223,22 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                     verified = False
 
                 if verified:
-                    # 파일이 실제로 HEAD와 일치 — 외부 도구가 이미 업데이트한 것
+                    # 파일이 실제로 HEAD와 일치 — 외부 도구가 이미 업데이트한 것.
+                    # SHA뿐 아니라 manifest 버전도 함께 갱신해야 패널/알림에서
+                    # 버전 표시가 이전 값으로 남지 않는다.
                     installed_commit_sha = head_sha
-                    await self.store.async_set_branch(
-                        component_id, branch, {"installed_commit_sha": installed_commit_sha}
-                    )
+                    new_manifest_version = latest.get("remote_manifest_version")
+                    update_data: dict = {"installed_commit_sha": installed_commit_sha}
+                    if new_manifest_version:
+                        installed_version = new_manifest_version
+                        update_data["installed_version"] = installed_version
+                    await self.store.async_set_branch(component_id, branch, update_data)
                     has_update = False
                     _LOGGER.debug(
-                        "External update detected for %s@%s: files already match HEAD %s "
-                        "— store updated, has_update cleared",
+                        "External update detected for %s@%s: files match HEAD %s "
+                        "(version: %s) — store updated, has_update cleared",
                         component_id, branch, installed_commit_sha[:7],
+                        installed_version,
                     )
 
             # latest가 branch 타입인데 update_mode가 release인 경우
