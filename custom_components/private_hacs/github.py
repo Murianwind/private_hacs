@@ -225,7 +225,26 @@ class GitHubClient:
                 raise GitHubAuthError(
                     "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
                 )
-            _LOGGER.debug("resolve_branch_latest %s@%s → %s", repo, branch, resp.status)
+            # debug 레벨은 HA 기본 로그 설정에서 보이지 않아 실패가 조용히
+            # 묻히고, 화면에는 예전 값이 "최신"인 것처럼 남는다. rate limit(403)
+            # 등 원인을 확인할 수 있도록 warning으로 승격하고 응답 본문을 남긴다.
+            try:
+                body = await resp.text()
+            except Exception:
+                body = "<응답 본문 읽기 실패>"
+            if resp.status == 403:
+                remaining = resp.headers.get("X-RateLimit-Remaining")
+                reset = resp.headers.get("X-RateLimit-Reset")
+                _LOGGER.warning(
+                    "resolve_branch_latest %s@%s — 접근 거부(403). "
+                    "RateLimit-Remaining=%s RateLimit-Reset=%s: %s",
+                    repo, branch, remaining, reset, body[:300],
+                )
+            else:
+                _LOGGER.warning(
+                    "resolve_branch_latest %s@%s → HTTP %s: %s",
+                    repo, branch, resp.status, body[:300],
+                )
             return None
 
     async def has_any_release_or_tag(self, repo: str) -> bool:
