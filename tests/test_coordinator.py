@@ -1004,3 +1004,97 @@ class TestExternalUpdateDetection:
         await coord._async_update_data()
 
         github.verify_installed_sha.assert_not_called()
+
+
+class TestTransientFetchFailurePreservesPreviousData:
+    """
+    GitHub 서버 일시적 장애(503 "Unicorn!" 페이지 등)로 resolve_branch_latest/
+    resolve_latest가 예외 없이 None을 반환했을 때, 이전 폴링의 latest 값을
+    그대로 유지해 "정보 없음"이나 잘못된 has_update로 뒤바뀌지 않는지 검증.
+    """
+
+    @pytest.mark.asyncio
+    async def test_given_commit_mode_transient_none__when_polled__then_previous_latest_kept(self, hass):
+        """
+        Given: 이전 폴링에서 업데이트가 감지된 상태(새 SHA), 이번 폴링은
+               GitHub 일시 장애로 resolve_branch_latest가 None 반환
+        When:  _async_update_data 실행
+        Then:  latest가 None으로 덮이지 않고 이전 값(새 SHA)이 유지되어
+               has_update=True가 계속 정확하게 유지됨
+        """
+        old_sha = "oldsha111"
+        new_sha = "newsha999"
+        store = make_store({
+            ("kma_weather", "main"): {
+                "installed_version": "2.0.0", "installed_commit_sha": old_sha,
+            }
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=_commit_latest(new_sha))
+        github.verify_installed_sha = AsyncMock(return_value=False)
+        repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        # 1차 폴링 — 정상적으로 새 SHA 감지
+        result1 = await coord._async_update_data()
+        key = make_entry_key("kma_weather", "main")
+        assert result1[key]["has_update"] is True
+
+        # 실제 HA 런타임에서는 async_refresh()가 self.data = await
+        # _async_update_data()를 대신 해준다. 여기서는 _async_update_data를
+        # 직접 호출하므로 그 동작을 흉내 내어 명시적으로 반영한다.
+        coord.data = result1
+
+        # 2차 폴링 — GitHub 일시 장애로 None 반환
+        github.resolve_branch_latest = AsyncMock(return_value=None)
+        result2 = await coord._async_update_data()
+
+        # latest가 사라지지 않고 이전 값을 유지해 has_update가 그대로 True
+        assert result2[key]["has_update"] is True
+
+    @pytest.mark.asyncio
+    async def test_given_release_mode_transient_none__when_polled__then_previous_latest_kept(self, hass):
+        """
+        Given: 이전 폴링에서 릴리즈 정보를 정상 수신, 이번 폴링은 일시 장애로 None
+        When:  _async_update_data 실행
+        Then:  latest가 None으로 덮이지 않고 이전 릴리즈 정보가 유지됨
+        """
+        store = make_store({
+            ("kma_weather", "main"): {"installed_version": "1.9.0"},
+        })
+        github = AsyncMock()
+        github.resolve_latest = AsyncMock(return_value=_release_latest("v2.0.0"))
+        repos = [make_repo_item(component_id="kma_weather", update_mode="release")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result1 = await coord._async_update_data()
+        key = make_entry_key("kma_weather", "main")
+        assert result1[key]["has_update"] is True
+
+        coord.data = result1
+        github.resolve_latest = AsyncMock(return_value=None)
+        result2 = await coord._async_update_data()
+
+        assert result2[key]["has_update"] is True
+
+    @pytest.mark.asyncio
+    async def test_given_first_poll_ever_fails__when_no_previous_data__then_latest_stays_none(self, hass):
+        """
+        Given: 처음 폴링하는 저장소인데 첫 시도부터 None 반환 (참고할 이전 값 없음)
+        When:  _async_update_data 실행
+        Then:  latest가 None으로 남고, has_update는 안전하게 False
+               (예외 없이 처리되어야 함 — 참고할 이전 데이터가 없는 경우)
+        """
+        store = make_store({
+            ("kma_weather", "main"): {"installed_version": "1.0.0"},
+        })
+        github = AsyncMock()
+        github.resolve_branch_latest = AsyncMock(return_value=None)
+        repos = [make_repo_item(component_id="kma_weather", update_mode="commit")]
+        coord = _make_coord(hass, repos, github, store)
+
+        result = await coord._async_update_data()
+        key = make_entry_key("kma_weather", "main")
+
+        assert result[key]["has_update"] is False
+        assert result[key]["latest"] is None
