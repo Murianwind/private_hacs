@@ -33,6 +33,10 @@ def _make_client(responses: list):
         resp.status = status
         resp.json = AsyncMock(return_value=data)
         resp.read = AsyncMock(return_value=data if isinstance(data, bytes) else b"")
+        resp.text = AsyncMock(
+            return_value=data if isinstance(data, str) else str(data)
+        )
+        resp.headers = {}
         yield resp
 
     session.get = _get
@@ -596,3 +600,66 @@ class TestHasAnyReleaseOrTag:
         client = _make_client([(404, {}), (404, {})])
         result = await client.has_any_release_or_tag("Murianwind/private_hacs")
         assert result is False
+
+
+# ══════════════════════════════════════════════════════════════════════
+# resolve_branch_latest — 실패 응답 처리 (rate limit 등 조용히 묻히지 않도록)
+# ══════════════════════════════════════════════════════════════════════
+
+class TestResolveBranchLatest:
+
+    @pytest.mark.asyncio
+    async def test_given_valid_branch__when_resolved__then_returns_branch_info(self):
+        """
+        Given: 정상적인 브랜치 응답
+        When:  resolve_branch_latest 호출
+        Then:  type="branch"와 commit_sha 포함한 dict 반환
+        """
+        branch_response = {"commit": {"sha": "abc123abc123def"}}
+        manifest_response = {"encoding": "base64", "content": base64.b64encode(b'{}').decode()}
+        client = _make_client([(200, branch_response), (200, manifest_response)])
+        result = await client.resolve_branch_latest("Murianwind/my_lg", "my_lg", "main")
+
+        assert result["type"] == "branch"
+        assert result["commit_sha"] == "abc123abc123def"
+
+    @pytest.mark.asyncio
+    async def test_given_rate_limited_403__when_resolved__then_returns_none_and_logs_warning(self, caplog):
+        """
+        Given: GitHub API가 403(rate limit)으로 응답
+        When:  resolve_branch_latest 호출
+        Then:  None 반환 (예외 없이). warning 레벨로 로그가 남아야 함
+               (debug 레벨은 HA 기본 설정에서 안 보여 실패가 조용히 묻히고
+                화면에 예전 값이 "최신"인 것처럼 남는 문제의 재발 방지)
+        """
+        client = _make_client([(403, {"message": "API rate limit exceeded"})])
+        with caplog.at_level("WARNING"):
+            result = await client.resolve_branch_latest("Murianwind/my_lg", "my_lg", "main")
+
+        assert result is None
+        assert any("resolve_branch_latest" in rec.message and "403" in rec.message for rec in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_given_404_branch_not_found__when_resolved__then_returns_none_and_logs_warning(self, caplog):
+        """
+        Given: 브랜치를 찾을 수 없음 (404)
+        When:  resolve_branch_latest 호출
+        Then:  None 반환, warning 레벨 로그 남음
+        """
+        client = _make_client([(404, {"message": "Branch not found"})])
+        with caplog.at_level("WARNING"):
+            result = await client.resolve_branch_latest("Murianwind/my_lg", "my_lg", "nonexistent")
+
+        assert result is None
+        assert any("resolve_branch_latest" in rec.message for rec in caplog.records)
+
+    @pytest.mark.asyncio
+    async def test_given_401_auth_error__when_resolved__then_raises_github_auth_error(self):
+        """
+        Given: 인증 실패 (401)
+        When:  resolve_branch_latest 호출
+        Then:  GitHubAuthError 발생 (None 반환이 아니라 명시적 예외)
+        """
+        client = _make_client([(401, {})])
+        with pytest.raises(GitHubAuthError):
+            await client.resolve_branch_latest("Murianwind/my_lg", "my_lg", "main")
