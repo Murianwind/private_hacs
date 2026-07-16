@@ -1,7 +1,7 @@
 {
   "domain": "private_hacs",
   "name": "Private HACS",
-  "version": "2.0.8",
+  "version": "2.1.0",
   "documentation": "https://github.com/Murianwind/private-hacs",
   "issue_tracker": "https://github.com/Murianwind/private-hacs/issues",
   "dependencies": [],

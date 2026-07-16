@@ -72,14 +72,19 @@
   }
   .header .btn-restart:hover { background: rgba(244,67,54,.42); }
 
-  .btn-primary { background: var(--primary); color: #fff; }
-  .btn-primary:hover { background: var(--primary-dark); }
+  /* 배경에 accent 색을 꽉 채우는 요소는 테마 변수에 의존하면 안 됨 —
+     --primary/--success/--warning 등의 밝기는 테마마다 다르므로,
+     텍스트 색을 한쪽 테마에 맞춰 고정하면 반대쪽 테마에서 반드시
+     대비가 깨진다. 배경/글자를 둘 다 고정색으로 통일해 라이트/다크
+     어느 쪽에서도 항상 동일하게 보이도록 한다. */
+  .btn-primary { background: #0277bd; color: #fff; }
+  .btn-primary:hover { background: #01579b; }
   .btn-ghost { background: transparent; color: var(--text-secondary); border: 1px solid var(--border); }
   .btn-ghost:hover { background: var(--surface3); color: var(--text); }
-  .btn-success { background: var(--success); color: #fff; }
-  .btn-success:hover { filter: brightness(1.1); }
-  .btn-warning { background: var(--warning); color: #1a1200; font-weight: 600; }
-  .btn-warning:hover { filter: brightness(1.1); }
+  .btn-success { background: #2e7d32; color: #fff; }
+  .btn-success:hover { background: #1b5e20; }
+  .btn-warning { background: #e65100; color: #fff; font-weight: 600; }
+  .btn-warning:hover { background: #bf360c; }
   .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
   .btn-danger:hover { background: #c62828; color: #fff; border-color: #c62828; }
   .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
@@ -111,7 +116,7 @@
     background: var(--surface2); color: var(--text);
     font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; font-family: inherit;
   }
-  .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600; }
+  .tab-btn.active { background: #0277bd; color: #fff; border-color: #0277bd; font-weight: 600; }
 
   /* ── Repo group ── */
   .repo-grid {
@@ -167,7 +172,7 @@
   .branch-row {
     display: grid;
     grid-template-columns: 44px 1fr;
-    grid-template-rows: auto auto;
+    grid-template-rows: auto auto auto;
     row-gap: 6px;
     padding: 12px 16px 12px 14px;
     border-bottom: 1px solid var(--border);
@@ -176,21 +181,22 @@
   .branch-row:last-child { border-bottom: none; }
   .branch-row.inactive { opacity: .55; }
 
-  /* 토글: 1열, 두 행 모두 (세로 가운데 정렬) */
+  /* 토글: 1열, 세 행 모두 (세로 가운데 정렬) */
   .toggle-wrap {
     grid-column: 1;
-    grid-row: 1 / 3;
+    grid-row: 1 / 4;
     display: flex;
     align-items: center;
     padding-top: 1px;
   }
 
-  /* 브랜치명+배지: 2열 1행 */
+  /* 브랜치명 + 상태/모드 배지: 2열 1행 */
   .branch-label {
     grid-column: 2;
     grid-row: 1;
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
     min-width: 0;
   }
@@ -203,20 +209,21 @@
     flex-shrink: 0;
   }
 
-  /* 버전/링크 배지: branch-label과 같은 행에 flex로 이어짐 */
+  /* 설치/최신 버전 정보 + 커밋 로그 링크: 2열 2행 (브랜치명과 별도 줄) */
   .branch-meta {
+    grid-column: 2;
+    grid-row: 2;
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
     align-items: center;
-    flex: 1;
     min-width: 0;
   }
 
-  /* 버튼: 2열 2행 */
+  /* 버튼: 2열 3행 */
   .branch-actions {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 3;
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
@@ -868,7 +875,7 @@ function branchRowHTML(r) {
     updateModeBadge = '<span class="badge" style="background:rgba(124,77,255,.15);color:#9c7ae8;cursor:pointer" '
       + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'release\')" title="릴리즈 모드로 변경">커밋 추적</span>';
   } else {
-    updateModeBadge = '<span class="badge" style="background:rgba(3,169,244,.1);color:var(--primary);cursor:pointer" '
+    updateModeBadge = '<span class="badge" style="background:rgba(3,169,244,.1);color:#0277bd;cursor:pointer" '
       + 'onclick="setUpdateMode(\'' + esc(r.component_id) + '\',\'' + esc(r.branch) + '\',\'commit\')" title="커밋 추적 모드로 변경">릴리즈</span>';
   }
 
@@ -906,14 +913,16 @@ function branchRowHTML(r) {
   }
 
   // 브랜치 행 구조:
-  // [토글 1열 1-2행] | [브랜치명 + 배지  2열 1행]
-  //                  | [버튼들           2열 2행]
+  // [토글 1열 1-3행] | [브랜치명 + 최신/업데이트/모드 배지   2열 1행]
+  //                  | [설치/최신 버전 + 커밋 로그 링크      2열 2행]
+  //                  | [버튼들                              2열 3행]
   return '<div class="branch-row' + (inactive ? ' inactive' : '') + '">'
     + toggleHtml
     + '<div class="branch-label">'
     +   '<span class="branch-name">' + esc(r.branch) + '</span>'
-    +   '<div class="branch-meta">' + statusBadge + sourceBadge + updateModeBadge + installedBadge + latestBadge + releaseLink + '</div>'
+    +   statusBadge + sourceBadge + updateModeBadge
     + '</div>'
+    + '<div class="branch-meta">' + installedBadge + latestBadge + releaseLink + '</div>'
     + '<div class="branch-actions">' + actions + '</div>'
     + '</div>';
 }
@@ -1326,12 +1335,12 @@ function selectUpdateMode(mode) {
   const btnRelease = $el('modeBtnRelease'), btnCommit = $el('modeBtnCommit');
   const hint = $el('updateModeHint');
   if (mode === 'release') {
-    btnRelease.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    btnRelease.style.cssText = 'flex:1;opacity:1;background:#0277bd;color:#fff;border-color:#0277bd';
     btnCommit.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
     hint.textContent = '릴리즈/태그 기준으로 업데이트합니다.';
   } else {
     btnRelease.style.cssText = 'flex:1;opacity:.4;background:transparent;color:var(--text-secondary);border:1px solid var(--border)';
-    btnCommit.style.cssText = 'flex:1;opacity:1;background:var(--primary);color:#fff;border-color:var(--primary)';
+    btnCommit.style.cssText = 'flex:1;opacity:1;background:#0277bd;color:#fff;border-color:#0277bd';
     hint.textContent = '해당 브랜치의 커밋 기준으로 업데이트합니다.';
   }
   if (_pendingRepoInfo.branch) $el('addSubmitBtn').disabled = false;
