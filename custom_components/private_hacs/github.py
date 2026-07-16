@@ -225,7 +225,36 @@ class GitHubClient:
                 raise GitHubAuthError(
                     "GitHub 토큰이 만료되었거나 유효하지 않습니다. 토큰을 재설정해주세요."
                 )
-            _LOGGER.debug("resolve_branch_latest %s@%s → %s", repo, branch, resp.status)
+            # debug 레벨은 HA 기본 로그 설정에서 보이지 않아 실패가 조용히
+            # 묻히고, 화면에는 예전 값이 "최신"인 것처럼 남는다. rate limit(403)
+            # 등 원인을 확인할 수 있도록 warning으로 승격하고 응답 본문을 남긴다.
+            if 500 <= resp.status < 600:
+                # GitHub 쪽 일시적 장애(예: 503 "Unicorn!" 페이지)는 HTML
+                # 전체를 로그에 남기면 너무 장황하므로 상태 코드만 짧게 기록.
+                # 호출 측(coordinator)이 이전 값을 유지하도록 None을 반환한다.
+                _LOGGER.warning(
+                    "resolve_branch_latest %s@%s — GitHub 서버 오류(HTTP %s), "
+                    "일시적 장애로 보고 이번 폴링은 건너뜁니다.",
+                    repo, branch, resp.status,
+                )
+                return None
+            try:
+                body = await resp.text()
+            except Exception:
+                body = "<응답 본문 읽기 실패>"
+            if resp.status == 403:
+                remaining = resp.headers.get("X-RateLimit-Remaining")
+                reset = resp.headers.get("X-RateLimit-Reset")
+                _LOGGER.warning(
+                    "resolve_branch_latest %s@%s — 접근 거부(403). "
+                    "RateLimit-Remaining=%s RateLimit-Reset=%s: %s",
+                    repo, branch, remaining, reset, body[:300],
+                )
+            else:
+                _LOGGER.warning(
+                    "resolve_branch_latest %s@%s → HTTP %s: %s",
+                    repo, branch, resp.status, body[:300],
+                )
             return None
 
     async def has_any_release_or_tag(self, repo: str) -> bool:

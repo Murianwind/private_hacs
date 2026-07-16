@@ -127,6 +127,22 @@ class PrivateHacsCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Failed to fetch version info for %s@%s: %s", repo, branch, err)
                 latest = (self.data or {}).get(entry_key, {}).get("latest")
 
+            # resolve_branch_latest/resolve_latest가 예외 없이 None을 반환한
+            # 경우(예: GitHub 서버 일시 장애 503, "Unicorn!" 페이지 등)도
+            # 예외 경로와 동일하게 취급한다. 그렇지 않으면 latest=None으로
+            # 그대로 진행되어 이번 폴링에서만 "정보 없음"이 되고, 자칫
+            # has_update가 잘못된 값(False)으로 계산될 위험이 있다.
+            # 이전 폴링에서 얻은 값을 그대로 유지해 일시적 장애가 상태를
+            # 잘못 덮어쓰지 않도록 한다.
+            if latest is None:
+                latest = (self.data or {}).get(entry_key, {}).get("latest")
+                if latest is not None:
+                    _LOGGER.debug(
+                        "%s@%s: latest 조회 실패(일시적) — 이전 값 유지: %s",
+                        component_id, branch,
+                        latest.get("commit_sha", latest.get("version")),
+                    )
+
             installed_version, version_source = await self._resolve_installed_version(
                 component_id, branch, active
             )
